@@ -208,7 +208,7 @@ Things deliberately **not** changed:
 launcher/build.sh
 ```
 
-Produces `launcher/LiteHome.apk`, about 45 KB. It builds with the plain SDK tools: no Gradle,
+Produces `launcher/LiteHome.apk`, about 55 KB. It builds with the plain SDK tools: no Gradle,
 no Android Studio, no libraries. The first build creates a throwaway signing key in `launcher/`
 that is git-ignored; keep it so later builds install over the top.
 
@@ -216,10 +216,11 @@ that is git-ignored; keep it so later builds install over the top.
 
 What Lite Home is:
 
-- **One screen:** a clock, a network pill at the top right and a grid of your apps' banners.
-  The selected app is shown at full brightness and slightly larger; the others are softly dimmed.
-- **No internet permission at all.** Android itself stops it from connecting to anything. It only
-  reads network, Wi-Fi and Bluetooth status for the pill and the Control Center.
+- **One screen:** a clock with the weather beside it, a network pill at the top right and a grid of
+  your apps' banners. The selected app is shown at full brightness and slightly larger; the others
+  are softly dimmed.
+- **No tracking, no third-party code.** Its only network use is the optional weather (see
+  *Weather* below). It reads network, Wi-Fi and Bluetooth status for the pill and the Control Center.
 - **Light and fast:** about 45 KB, about 25 MB of RAM, and on the Mi Box 4 about 97% of frames
   render on time while moving around the grid (median 6 ms). It avoids soft shadows, extra overlay
   layers and double backgrounds, which measured as the main causes of dropped frames on this
@@ -272,7 +273,38 @@ Nothing on the home screen shows that settings exist: hold OK on the network pil
 | Show hidden apps / Reset app order | actions |
 | Set as default home screen | asks Android to make Lite Home the home app (see step L) |
 
+| Weather | On, Off: Off means the launcher makes no network connections at all |
+
 Settings are kept across updates, together with your app order and hidden apps.
+
+**Weather**
+
+The current condition and temperature sit beside the clock, with a sun or moon depending on the
+time of day. After **one minute without a button press**, the details unfold to the right:
+the condition, anything wetter expected later in the day, and today's high and low, for example
+`Partly cloudy · Light rain expected · 17° / 11°`. Any press folds them away again.
+
+- **Location:** taken from the TV's **time zone** (`Europe/Warsaw` → Warsaw), looked up once per
+  time zone. No location permission, and no IP-based geolocation. Units follow that city's country
+  (°F only in the US and the few other countries that use it), not the TV's language.
+- **Source:** [Open-Meteo](https://open-meteo.com): free, open source, no account or API key.
+- **Refresh:** at most every 30 minutes, and only while the home screen is showing.
+
+How the network access is locked down (see `launcher/src/dev/lite/home/Weather.java`):
+
+| Measure | Why |
+|---|---|
+| HTTPS only, enforced app-wide by `res/xml/network_security.xml` | no unencrypted traffic can leave the app |
+| Only the system's built-in certificate authorities are trusted | a user-installed certificate can't be used to intercept it |
+| Fixed hosts (`api.open-meteo.com`, `geocoding-api.open-meteo.com`), redirects refused | it can't be bounced elsewhere |
+| Replies over 64 KB are refused; temperatures and codes are range-checked | a broken or hostile reply can't exhaust memory or show garbage |
+| Coordinates rounded to about 10 km before sending; no IDs, cookies or app data | only city-level location leaves the box |
+| Outgoing requests only | nothing on the internet can connect *to* the launcher |
+| Weather setting Off | no network use at all |
+
+Open-Meteo still sees your public IP address, as any website you visit does. Certificate pinning
+was left out on purpose: weather would break each time Open-Meteo renews its certificate, and the
+measures above already cover interception.
 
 Source: [`launcher/src/dev/lite/home/`](../launcher/src/dev/lite/home/).
 

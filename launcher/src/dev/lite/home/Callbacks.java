@@ -48,5 +48,8 @@ final class Callbacks {
     static class SteadyScroll extends ScrollView {
         SteadyScroll(Context c) { super(c); }
         @Override protected int computeScrollDeltaToGetChildRectOnScreen(Rect rect) { return 0; }
+        // Arrow keys move focus only. Without this, DOWN past the last row makes ScrollView page-scroll
+        // on its own and leaves the top row cut off under the clock.
+        @Override public boolean executeKeyEvent(android.view.KeyEvent e) { return false; }
     }
 }

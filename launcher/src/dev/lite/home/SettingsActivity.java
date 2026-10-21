@@ -82,6 +82,10 @@ public class SettingsActivity extends Activity {
         toggle("Show the date", Prefs.DATE, true);
         toggle("RIGHT at the end of a row opens Control Center", Prefs.EDGE_CC, true);
 
+        section("Weather");
+        Item wx = toggle("Weather", Prefs.WEATHER, true);
+        wx.key = "weather";
+
         section("Apps");
         Item hidden = action("Show hidden apps", () -> {
             prefs.edit().remove("hidden").apply();
@@ -98,7 +102,7 @@ public class SettingsActivity extends Activity {
         section("System");
         Item home = action("Set as default home screen", () -> DefaultHome.request(this));
         home.key = "default_home";
-        setSub(action("About", null).sub, "Lite Home " + version() + " · no internet permission · no tracking");
+        setSub(action("About", null).sub, "Lite Home " + version() + " · no tracking · only network use: weather (Open-Meteo)");
 
         refreshCounts();
         list.post(() -> {
@@ -127,6 +131,10 @@ public class SettingsActivity extends Activity {
             if ("hidden".equals(it.key)) {
                 Set<String> h = prefs.getStringSet("hidden", Collections.emptySet());
                 setSub(it.sub, h.isEmpty() ? "No apps are hidden" : h.size() + " hidden");
+            } else if ("weather".equals(it.key)) {
+                String c = prefs.getString(Prefs.CITY, null);
+                setSub(it.sub, (c != null ? c.split(",")[0] + " (from the TV's time zone)" : "Location from the TV's time zone")
+                        + " · HTTPS · Off = no network use");
             } else if ("default_home".equals(it.key)) {
                 setSub(it.sub, DefaultHome.isDefault(this) ? "Lite Home is your home screen" : "Not the home screen yet");
             }

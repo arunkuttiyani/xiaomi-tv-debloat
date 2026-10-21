@@ -13,7 +13,8 @@ final class Prefs {
 
     // keys
     static final String COLS = "cols", TILE = "tile", LABELS = "labels", TINT = "tint",
-            MOTION = "motion", CLOCK = "clock", DATE = "date", EDGE_CC = "edge_cc";
+            MOTION = "motion", CLOCK = "clock", DATE = "date", EDGE_CC = "edge_cc",
+            WEATHER = "weather", CITY = "wx_city", LAT = "wx_lat", LON = "wx_lon";
 
     // values
     static final int LABELS_ALWAYS = 0, LABELS_FOCUSED = 1, LABELS_NEVER = 2;
@@ -22,7 +23,7 @@ final class Prefs {
     static final int TILE_SMALL = 0, TILE_MEDIUM = 1, TILE_LARGE = 2;
 
     final int cols, tile, labels, motion, clock;
-    final boolean tint, date, edgeCc;
+    final boolean tint, date, edgeCc, weather;
 
     private Prefs(SharedPreferences p) {
         cols = p.getInt(COLS, 5);
@@ -33,13 +34,15 @@ final class Prefs {
         tint = p.getBoolean(TINT, true);
         date = p.getBoolean(DATE, true);
         edgeCc = p.getBoolean(EDGE_CC, true);
+        weather = p.getBoolean(WEATHER, true);
     }
 
     static Prefs load(Context c) { return new Prefs(c.getSharedPreferences(FILE, Context.MODE_PRIVATE)); }
 
     /** Changes when any visual setting changes, so the home screen knows to rebuild. */
     String signature() {
-        return cols + "/" + tile + "/" + labels + "/" + motion + "/" + clock + "/" + tint + "/" + date + "/" + edgeCc;
+        return cols + "/" + tile + "/" + labels + "/" + motion + "/" + clock + "/" + tint + "/" + date + "/" + edgeCc
+                + "/" + weather;
     }
 
     /** Animation duration scaled by the motion setting. */

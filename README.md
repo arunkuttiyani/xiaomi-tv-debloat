@@ -28,10 +28,12 @@ other models are expected or experimental. See [docs/DEVICES.md](docs/DEVICES.md
   - The audit found Xiaomi's core TV service has a log uploader and tracks which app you use. Details are in [docs/FINDINGS.md](docs/FINDINGS.md).
   - It can't be removed safely, so the guide firewalls it with NetGuard.
 - **Lite Home launcher:**
-  - About 45 KB, with **no internet permission**.
+  - About 55 KB, no tracking, no third-party code. Its only network use is the optional weather.
   - A clean grid: the selected app is bright and slightly larger, the rest softly dimmed.
   - A compact, tvOS-style **Control Center**: Wi-Fi, Bluetooth, display, storage and memory.
   - **Hidden launcher settings:** apps per row, tile size, app names, animation level, clock and more.
+  - **Weather beside the clock**, located from the TV's time zone. After a minute idle it unfolds
+    to the right ("Partly cloudy · 17° / 11°"). HTTPS only, and one switch turns it off.
   - Runs at about 97% on-time frames on a Mi Box 4. Works on Android 5+ at any screen size.
   - New apps appear automatically. Hold OK on a tile to move, hide or uninstall it.
 - **Fixes:**

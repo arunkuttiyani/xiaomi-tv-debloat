@@ -81,3 +81,10 @@ Open the launcher settings and set **Animations** to *Reduced* or *Off*. Turning
 Many Android TV and Google TV builds keep their own launcher in charge whatever you choose. Disable
 the stock launcher with ADB (step L does this): the app shows the exact command when the request
 doesn't take effect.
+
+## Lite Home: no weather beside the clock
+- Check **Weather** is On in the launcher settings (hold OK on the network pill).
+- The location comes from the TV's time zone. If it is set to a generic zone such as `UTC` or
+  `Etc/GMT+1`, there is no city to look up: pick your region's time zone in the TV's
+  Date & time settings.
+- The box needs internet access for the first lookup; until then nothing is shown.

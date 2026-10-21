@@ -61,7 +61,8 @@ import java.util.Set;
 
 /**
  * Lite Home: a clock, a grid of app banners and a Control Center panel on the right for network,
- * Bluetooth, display and storage. No network access, no tracking, no background work.
+ * Bluetooth, display and storage, and optional weather beside the clock. No tracking, no background
+ * work; the only network use is the weather (see Weather.java), which the Weather setting turns off.
  *
  *   Hold OK (or MENU) on a tile      move, hide or manage the app
  *   OK on the network pill           Control Center (also: RIGHT at the end of a row)
@@ -97,6 +98,15 @@ public class HomeActivity extends Activity {
     ValueAnimator tintAnim;
     int tint = 0xFF1B2433;
     TextClock time, date;
+    LinearLayout weatherBox;
+    WeatherIcon wxIcon;
+    TextView wxTemp, wxDetails;
+    ValueAnimator wxExpand;
+    boolean wxExpanded;
+    static final long IDLE_MS = 60_000;
+    final Runnable wxIdle = this::expandWeather;
+    final android.os.Handler wxHandler = new android.os.Handler();
+    final Runnable wxTick = this::weatherTick; // method reference: d8 8.2 crashes on anonymous classes
     Callbacks.SteadyScroll scroller;
     LinearLayout grid;
     LinearLayout pill;
@@ -200,7 +210,35 @@ public class HomeActivity extends Activity {
         date.setFormat24Hour("EEEE, d MMMM");
         date.setTextColor(0x99FFFFFF);
         date.setTextSize(15);
-        clock.addView(time);
+        // time, then the weather (condition icon + temperature) on the same line
+        LinearLayout timeRow = new LinearLayout(this);
+        timeRow.setGravity(Gravity.CENTER_VERTICAL);
+        timeRow.addView(time);
+        weatherBox = new LinearLayout(this);
+        weatherBox.setGravity(Gravity.CENTER_VERTICAL);
+        weatherBox.setPadding(px(20), px(2), 0, 0);
+        weatherBox.setVisibility(View.GONE);
+        wxIcon = new WeatherIcon(this);
+        wxTemp = new TextView(this);
+        wxTemp.setTextColor(Color.WHITE);
+        wxTemp.setTextSize(34);
+        wxTemp.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        wxTemp.setPadding(px(6), 0, 0, 0);
+        // Details that unfold to the right after a minute without input, e.g.
+        // "Partly cloudy · Rain expected · 17° / 11°". Revealed by a clip, so nothing re-lays out.
+        wxDetails = new TextView(this);
+        wxDetails.setTextColor(0xCCFFFFFF);
+        wxDetails.setTextSize(17);
+        wxDetails.setSingleLine(true);
+        wxDetails.setEllipsize(TextUtils.TruncateAt.END);
+        wxDetails.setMaxWidth(px(440)); // never reaches the network pill on the right
+        wxDetails.setPadding(px(18), px(4), 0, 0);
+        wxDetails.setAlpha(0f);
+        weatherBox.addView(wxIcon, new LinearLayout.LayoutParams(px(54), px(54)));
+        weatherBox.addView(wxTemp);
+        weatherBox.addView(wxDetails);
+        timeRow.addView(weatherBox);
+        clock.addView(timeRow);
         clock.addView(date);
         FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-2, -2, Gravity.START | Gravity.TOP);
         clp.setMargins(px(SIDE), px(26), 0, 0);
@@ -281,14 +319,22 @@ public class HomeActivity extends Activity {
             applyClockFormat();
             shownOnce = false;
             dirty = true;
+            refreshWeather(true);
         }
+        scheduleIdle();
         updateStatus();
         if (dirty) load();
         maybeHintDefaultHome();
+        showWeather(cfg.weather ? Weather.cached(prefs) : null);
+        wxHandler.removeCallbacks(wxTick);
+        wxHandler.post(wxTick); // refresh now if stale, then check every 10 minutes while visible
     }
 
     @Override protected void onPause() {
         resumed = false;
+        wxHandler.removeCallbacks(wxTick); // no weather requests while an app is in front
+        wxHandler.removeCallbacks(wxIdle);
+        collapseWeather(false);
         if (moving != null) endMove();
         super.onPause();
     }
@@ -315,6 +361,88 @@ public class HomeActivity extends Activity {
         prefs.edit().putBoolean("hinted_home", true).apply();
         Toast.makeText(this, "Lite Home isn't your home screen yet. Hold OK on the Wi-Fi pill, then "
                 + "\"Set as default home screen\".", Toast.LENGTH_LONG).show();
+    }
+
+    // ---- weather ------------------------------------------------------------------------------
+
+    private void weatherTick() {
+        refreshWeather(false);
+        wxHandler.postDelayed(wxTick, 10 * 60 * 1000L);
+    }
+
+    /**
+     * Fetches new weather in the background when the cached copy is older than 30 minutes. The
+     * location comes from the system time zone (looked up once per time zone).
+     */
+    void refreshWeather(boolean force) {
+        if (!cfg.weather) { showWeather(null); return; }
+        Weather cached = Weather.cached(prefs);
+        if (!force && cached != null && !cached.stale()) return;
+        new Thread(() -> {
+            double[] at = Weather.location(prefs);
+            Weather w = at == null ? null : Weather.fetch(prefs, at[0], at[1]);
+            if (w != null) runOnUiThread(() -> showWeather(w));
+        }).start();
+    }
+
+    private void showWeather(Weather w) {
+        if (w == null || !cfg.weather) { weatherBox.setVisibility(View.GONE); return; }
+        boolean f = Weather.fahrenheit(prefs);
+        wxIcon.set(w.kind(), w.day);
+        wxTemp.setText(Weather.deg(w.temp, f));
+        String outlook = w.outlook();
+        wxDetails.setText(w.condition() + (outlook != null ? "  ·  " + outlook : "")
+                + "  ·  " + Weather.deg(w.max, f) + " / " + Weather.deg(w.min, f)); // today's high / low
+        if (weatherBox.getVisibility() != View.VISIBLE) {
+            weatherBox.setAlpha(0f);
+            weatherBox.setVisibility(View.VISIBLE);
+            weatherBox.animate().alpha(1f).setDuration(cfg.ms(300)).start();
+        }
+    }
+
+    // ---- idle: unfold the weather details ---------------------------------------------------
+
+    /** Any key press counts as activity: fold the details away and restart the idle timer. */
+    @Override public void onUserInteraction() {
+        super.onUserInteraction();
+        if (wxExpanded) collapseWeather(true);
+        scheduleIdle();
+    }
+
+    private void scheduleIdle() {
+        wxHandler.removeCallbacks(wxIdle);
+        if (resumed && cfg.weather) wxHandler.postDelayed(wxIdle, IDLE_MS);
+    }
+
+    private void expandWeather() {
+        if (wxExpanded || weatherBox.getVisibility() != View.VISIBLE || panel.isOpen()) return;
+        wxExpanded = true;
+        animateDetails(1f, cfg.ms(700));
+    }
+
+    private void collapseWeather(boolean animate) {
+        if (!wxExpanded) return;
+        wxExpanded = false;
+        animateDetails(0f, animate ? cfg.ms(250) : 0);
+    }
+
+    /** Reveals the details left to right by growing a clip, with a fade; no re-layout per frame. */
+    private void animateDetails(float to, long duration) {
+        if (wxExpand != null) wxExpand.cancel();
+        float from = wxDetails.getAlpha();
+        if (duration == 0) { revealDetails(to); return; }
+        wxExpand = ValueAnimator.ofFloat(from, to);
+        wxExpand.setDuration(duration);
+        wxExpand.setInterpolator(EASE);
+        wxExpand.addUpdateListener(va -> revealDetails((float) va.getAnimatedValue()));
+        wxExpand.start();
+    }
+
+    private void revealDetails(float f) {
+        int w = wxDetails.getWidth(), h = wxDetails.getHeight();
+        wxDetails.setClipBounds(new android.graphics.Rect(0, 0, Math.round(w * f), h));
+        wxDetails.setAlpha(f);
+        wxDetails.setTranslationX((1f - f) * -px(10));
     }
 
     // ---- status (pill + Control Center) ------------------------------------------------------
