@@ -1,7 +1,9 @@
 # What the audit found
 
-Results from auditing a Mi Box 4 (Android TV 9, build 3933, security patch July 2021),
-running `scripts/03-audit.sh` and inspecting the Xiaomi system code. Your results may differ by firmware.
+Results from auditing a Mi Box S / Mi Box 4 (Android TV 9, build 3933, security patch July 2021),
+running `scripts/03-audit.sh` and inspecting the Xiaomi system code. Other Xiaomi models ship
+extra telemetry packages, such as `com.miui.tv.analytics` and `com.xiaomi.statistic`, which
+`packages/common.txt` disables. Run the audit on your own device: results differ by model and firmware.
 
 ## Summary
 

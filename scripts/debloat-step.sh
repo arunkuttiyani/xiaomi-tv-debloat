@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Disable ONE package (for the main user only, fully reversible), then health-check the box.
+# Disable ONE package (for the main user only, fully reversible), then health-check the device.
 # If any check fails, the package is re-enabled automatically and the script exits non-zero.
 #   Usage: scripts/debloat-step.sh <package>
 #   Undo:  adb -s $MIBOX_IP:5555 shell pm enable <package>
@@ -7,10 +7,15 @@
 PKG="${1:?usage: debloat-step.sh <package>}"
 ensure_connected
 
-if ! box pm list packages -u | grep -qx "package:$PKG"; then echo "  skip  $PKG (not on this box)"; exit 0; fi
+if ! box pm list packages | grep -qx "package:$PKG"; then echo "  skip  $PKG (not installed for this user)"; exit 0; fi
 if is_disabled "$PKG"; then echo "  skip  $PKG (already disabled)"; exit 0; fi
+if read_list "$PKG_DIR/keep.txt" | expand_on_device | grep -qx "$PKG"; then
+  echo "  skip  $PKG (protected by packages/keep.txt)"; exit 0
+fi
 
+# Baseline: what's healthy right now must still be healthy afterwards.
 home_before="$(current_home)"
+core_before="$(core_running)"
 box logcat -b crash -c
 
 say "Disabling $PKG"
@@ -23,10 +28,9 @@ sleep 4
 
 fail=0
 check() { if [ -n "$2" ]; then ok "$1"; else bad "$1"; fail=1; fi; }
-check "adb still responds"             "$(box echo up)"
-check "Xiaomi TV service running"      "$(box pidof xiaomi.tvservice)"
-check "system UI running"              "$(box pidof com.android.systemui)"
-check "Settings app reachable"         "$(box cmd package resolve-activity --brief -a android.settings.SETTINGS | grep tv.settings)"
+check "adb still responds" "$(box echo up)"
+for p in $core_before; do check "$p still running" "$(box pidof "$p")"; done
+check "Settings app reachable" "$(box cmd package resolve-activity --brief -a android.settings.SETTINGS | grep -v 'No activity')"
 box input keyevent KEYCODE_HOME; sleep 3
 home_now="$(current_home)"
 focus="$(box dumpsys window windows | grep -m1 mCurrentFocus)"

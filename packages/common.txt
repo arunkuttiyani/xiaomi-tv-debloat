@@ -1,0 +1,37 @@
+# Applies to every Xiaomi Android TV / Google TV device (boxes, sticks and TV sets).
+# Packages your device doesn't have are skipped. '*' is a wildcard.
+# Format: package  # reason            Used by: scripts/04-debloat.sh   Undone by: scripts/restore.sh
+#
+# Tested = disabled on the Mi Box 4 with health checks and reboots.
+# Others come from community lists for the Mi Box S, Mi Box S 2nd gen, Mi TV Stick and Mi TV 4A;
+# see docs/DEVICES.md. Every entry is still disabled one at a time with health checks.
+
+# --- Telemetry and ad tracking ---
+com.miui.tv.analytics                        # Xiaomi TV analytics: reads logs and app usage
+com.xiaomi.statistic                         # Xiaomi usage statistics
+tv.alphonso.alphonso_eula                    # Alphonso automatic content recognition (ad targeting). Tested
+com.google.android.feedback                  # Google feedback / telemetry
+com.google.android.tv.bugreportsender        # sends bug reports to Google. Tested
+
+# --- Promos, sponsored rows, silent installs ---
+com.xm.webcontent                            # Xiaomi web content / promo pages. Tested
+com.xiaomi.floatingframe                     # Xiaomi floating banner frame
+com.google.android.tvrecommendations         # sponsored rows on the stock home screen. Tested
+com.google.android.leanbacklauncher.recommendations  # recommendation rows for the older launcher
+android.autoinstalls.config.*                # Play Auto Install configs: silently install partner apps. Tested (2 variants)
+com.google.android.partnersetup              # partner customisation at setup. Tested
+
+# --- Xiaomi extras ---
+com.mitv.milinkservice                       # Mi Cast / MiLink, runs as system. Chromecast still works. Tested
+com.xiaomi.mitv.tvmanager                    # "TV Manager" cleaner app
+com.xiaomi.mitv.smartshare                   # Xiaomi SmartShare
+com.xiaomi.amazon.alexa                      # Alexa bridge
+
+# --- Google extras not needed on a TV ---
+com.google.android.backdrop                  # Ambient screensaver; fetches photos. 05-tweaks.sh switches to the basic one. Tested
+com.google.android.marvin.talkback           # screen reader (re-enable if you need accessibility). Tested
+com.google.android.syncadapters.calendar     # calendar sync. Tested
+com.google.android.syncadapters.contacts     # contacts sync. Tested
+com.google.android.play.games                # Play Games
+com.google.android.videos                    # Play Movies & TV
+com.android.printspooler                     # printing

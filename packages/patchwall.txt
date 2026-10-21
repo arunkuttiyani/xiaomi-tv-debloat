@@ -1,0 +1,19 @@
+# Applies automatically to devices with Xiaomi's PatchWall (com.mitv.tvhome.*): Mi / Redmi TV sets,
+# Mi TV Stick, Mi Box S 2nd gen, and Mi Box S units that got PatchWall in an update.
+# Not tested on hardware by this project; from community lists (see docs/DEVICES.md).
+# Each entry is still disabled one at a time with health checks.
+
+# --- PatchWall content rows ---
+com.mitv.tvhome.michannel                    # Mi Channel rows
+com.mitv.tvhome.mitvplus                     # Mi TV+ free channels / content rows
+com.mitv.dream                               # PatchWall screensaver. 05-tweaks.sh switches to the basic one
+
+# --- Preloaded Xiaomi media apps ---
+com.xiaomi.mimusic2                          # Mi Music
+com.mitv.gallery                             # Mi Gallery
+com.xiaomi.mitv.mediaexplorer                # Mi media explorer (use VLC / Nova instead)
+
+# --- PatchWall home screen ---
+# On a Mi TV this IS the home screen. Disabling it hands HOME to the Android TV / Google TV launcher,
+# or to Lite Home after step L. Step L handles it, so it's left commented out here.
+# com.mitv.tvhome.atv                        # PatchWall launcher and its rows

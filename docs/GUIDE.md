@@ -1,13 +1,15 @@
 # The A–Z guide
 
-Every step, in order, from a stock Mi Box 4 to a debloated box with the Lite Home launcher.
+Every step, in order, from a stock Xiaomi TV box, stick or TV to a debloated device with the
+Lite Home launcher. ("Box" below means whichever device you have.)
 Each step says what it does, why, how to run it, and how to undo it.
 
 Nothing here needs root, unlocking the bootloader or flashing anything. Every change is made
 through ADB, Android's own debugging tool, and can be undone with one command or a factory reset.
 
-**Tested on:** Xiaomi Mi Box 4 (`MIBOX4`, codename `oneday`), Android TV 9, build 3933,
-security patch 2021-07-05. Other Mi Box models probably work too, but check the package lists against your box first.
+**Devices:** fully tested on the Mi Box S (1st gen) / Mi Box 4 (`MIBOX4`, Android TV 9). The scripts
+detect other Xiaomi boxes, sticks and TVs (Android TV or Google TV, with or without PatchWall) and pick
+the matching package lists. See [DEVICES.md](DEVICES.md) for what's tested, expected and experimental.
 
 | Step | What | Changes the box? |
 |---|---|---|
@@ -75,8 +77,10 @@ With the remote:
 1. **Settings → Device Preferences → About**, scroll to **Build** and press OK on it **7 times**
    until it says you're a developer.
 2. Back to **Device Preferences → Developer options**, turn on **USB debugging**.
-   On the Mi Box 4 this also opens ADB on the network (port 5555). If your firmware has a separate
+   On Mi boxes this also opens ADB on the network (port 5555). If your firmware has a separate
    **Network debugging** or **ADB over network** switch, turn that on too.
+   On Mi / Redmi TV sets the path can differ: Xiaomi documents it under
+   **Settings → Account & Security → ADB debugging** once developer options are on.
 
 Undo: turn **USB debugging** off when you're finished. Leaving it on lets anyone on your network
 who gets the box to accept them control it.
@@ -100,7 +104,9 @@ scripts/01-connect.sh
 
 The first time, the TV shows **"Allow USB debugging?"** with your computer's key fingerprint.
 Tick **Always allow from this computer** and choose **OK**, then run the script again.
-It prints the model, Android version and current home screen. It warns you if the box isn't a Mi Box 4.
+It prints the model, Android version, chip and home screen, and detects the device type:
+Android TV or Google TV, and whether PatchWall is installed. It then lists the package lists that
+apply. It warns you if the device isn't a Xiaomi or isn't in the tested-device table yet.
 
 ## E. Back up
 
@@ -118,9 +124,10 @@ scripts/03-audit.sh
 ```
 
 Read-only report:
-- which Xiaomi and partner packages are present and enabled;
+- every Xiaomi, Mi and partner package on the device, with its state and the list that covers it.
+  Packages no list covers are flagged `UNREVIEWED`: look them up before disabling, and please report them;
 - every open internet connection, with its address and the app that owns it;
-- how much each app has sent and received since boot;
+- how much each app has sent and received since boot (Android 9 and older only);
 - whether NetGuard is firewalling the system user (step N).
 
 See [FINDINGS.md](FINDINGS.md) for what this turned up on the test box.
@@ -131,11 +138,17 @@ See [FINDINGS.md](FINDINGS.md) for what this turned up on the test box.
 scripts/04-debloat.sh
 ```
 
-Disables every package in [`packages/debloat.txt`](../packages/debloat.txt), **one at a time**.
-After each one it checks that:
+Shows a plan and asks before changing anything (add `--yes` to skip the question). It then disables,
+**one at a time**, everything in the lists that apply to your device:
+
+- [`packages/common.txt`](../packages/common.txt): every Xiaomi TV device;
+- [`packages/patchwall.txt`](../packages/patchwall.txt): only if PatchWall is installed.
+
+Packages your device doesn't have are skipped, and anything in `keep.txt` is never touched.
+Before each package it records which core services are running, and after it checks that:
 
 - ADB still responds;
-- Xiaomi's TV service and the system UI are still running;
+- every core service that was running still is (system UI, Xiaomi's TV service, Bluetooth…);
 - the Settings app still opens and the home screen still shows;
 - nothing has crashed.
 
@@ -145,10 +158,11 @@ If any check fails, it re-enables that package and stops.
 stays on the read-only system partition, so it can always come back. It does **not** use
 `pm uninstall`; see [why](TROUBLESHOOTING.md#never-use-pm-uninstall---user-0-on-apps-you-installed).
 
-What gets disabled, and why, is listed in the file itself. The highlights:
-- **Alphonso**, an ad company that identifies what's on your screen;
-- Xiaomi's promo-content and casting services;
+What gets disabled, and why, is written next to each package in the list files. The highlights:
+- **telemetry:** Xiaomi's analytics and statistics packages, and **Alphonso**, an ad company that identifies what's on your screen;
+- Xiaomi's promo-content, banner and casting services;
 - the auto-installers that push partner apps;
+- PatchWall's channel rows and preloaded Mi media apps (PatchWall devices only);
 - Google's sponsored home-screen rows, Ambient screensaver, bug-report sender, TalkBack, and calendar/contacts sync.
 
 [`packages/keep.txt`](../packages/keep.txt) lists what must **not** be touched, and why.
@@ -227,24 +241,34 @@ This script:
 1. builds the launcher;
 2. installs it;
 3. opens it once as a normal app to make sure it starts;
-4. **disables** (does not remove) Google's stock launcher.
+4. **disables** (does not remove) every other home screen the device has: the Android TV
+   launcher, the Google TV launcher, or the PatchWall home on Mi TVs. It records which ones in
+   `backups/launchers-disabled.txt`.
 
-Why disable the stock launcher? Android TV always gives it priority over any other launcher, so
-"set default home" has no effect while it's enabled. Android's built-in fallback home stays as a
-safety net, and step P brings the stock launcher back.
+If HOME still doesn't open Lite Home afterwards, it re-enables those launchers and stops.
+
+Why disable the stock launcher? Android TV always gives the built-in launcher priority over any
+other, so "set default home" has no effect while it's enabled. Android's built-in fallback home
+stays as a safety net, and step P brings the stock launcher back.
+
+**Google TV devices** (Xiaomi TV Box S 2nd gen, Google TV sets): this step is **experimental**. The
+script asks first, and only disables the Google TV home once Lite Home has started cleanly.
 
 ## M. Set the best output resolution
 
-The box picks a resolution at boot, and it isn't always the best one. See what yours is sending:
+Boxes and sticks pick a resolution at boot, and it isn't always the best one. (TV sets drive their
+own panel, so skip this step on a TV.) See what yours is sending:
 
 ```bash
 scripts/07-verify.sh      # see the "Output" section
 ```
 
-`HDMI mode` shows a VIC code: **4** = 720p60, **16** = 1080p60, **97** = 2160p (4K) 60.
+On Amlogic devices (all Mi boxes and sticks), `HDMI mode` shows a VIC code: **4** = 720p60,
+**16** = 1080p60, **97** = 2160p (4K) 60. Other chips show Android's display mode instead.
 
 To change it, on the box: **Settings → Device Preferences → Display & Sound → Screen resolution**
-(or run `adb -s $MIBOX_IP:5555 shell am start -n com.android.tv.settings/com.droidlogic.tv.settings.display.DisplayActivity`).
+(on Amlogic you can also open it with
+`adb -s $MIBOX_IP:5555 shell am start -n com.android.tv.settings/com.droidlogic.tv.settings.display.DisplayActivity`).
 Pick the mode with the remote. If the picture doesn't come back, wait a few seconds: the box
 switches back by itself unless you confirm.
 
@@ -254,12 +278,13 @@ switches back by itself unless you confirm.
 | 1440p / 2K monitor | 4K 60Hz. The box can't output 1440p; the monitor scales 4K down, which is sharper than stretching 1080p |
 | 4K TV | 4K 60Hz |
 
-The box's HDMI output tops out at **60 Hz**. 120 or 144 Hz isn't possible on this hardware.
+Mi boxes and sticks top out at **60 Hz** over HDMI. 120 or 144 Hz isn't possible on that hardware.
 HDR10 turns on automatically for HDR content when the screen supports it.
 
 ## N. Firewall Xiaomi's tracking service with NetGuard
 
-`mitv.service` is Xiaomi's core TV service. It can't be disabled safely (see
+`mitv.service` is Xiaomi's core TV service on Mi boxes and sticks. TV sets have similar system
+services. It can't be disabled safely (see
 [FINDINGS.md](FINDINGS.md)), but it contains a log uploader and tracks which app you're using,
 so cut off its internet instead:
 
@@ -291,7 +316,7 @@ Reboots the box, waits for it, and checks:
 - there were no crashes;
 - NetGuard is running.
 
-It also prints the HDMI output, free RAM and free storage.
+It also prints the output mode, free RAM and free storage.
 
 ## P. Undo everything
 
@@ -300,8 +325,10 @@ scripts/restore.sh                     # re-enable all packages, stock launcher 
 scripts/restore.sh --remove-launcher   # same, and uninstall Lite Home
 ```
 
-Re-enables everything in both package lists, re-enables the stock launcher, and puts the
-screensaver back. To undo NetGuard, turn it off or uninstall it.
+Re-enables everything named in `common.txt`, `patchwall.txt` and `optional.txt`, and every home
+screen step L disabled, then puts the screensaver back. Packages that were **already disabled in
+your first backup** (step E) stay disabled, because that's how your device was before. To undo
+NetGuard, turn it off or uninstall it.
 
 **Nuclear option:** **Settings → Device Preferences → Reset** (factory reset) returns the box to
 exactly how it shipped, because nothing in this repo touches the system partition.

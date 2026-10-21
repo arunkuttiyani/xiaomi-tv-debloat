@@ -65,7 +65,8 @@ public class HomeActivity extends Activity {
     private static final String SETTINGS_KEY = "__settings__";
     // Launchers and the TV settings app are reached through the Settings tile instead.
     private static final Set<String> SKIP = new HashSet<>(Arrays.asList(
-            "dev.lite.home", "com.google.android.tvlauncher", "com.android.tv.settings"));
+            "dev.lite.home", "com.google.android.tvlauncher", "com.google.android.apps.tv.launcherx",
+            "com.android.tv.settings"));
     private static final Interpolator EASE = new DecelerateInterpolator(1.8f);
 
     static class App {

@@ -1,9 +1,24 @@
-# Apps that are only bloat if you don't use them. All are commented out: remove the leading '#'
-# from the ones you never use, then run:  scripts/04-debloat.sh packages/optional.txt
+# Personal choice: only bloat if you don't use them. Everything is commented out. Remove the '#'
+# in front of what you never use, then run:  scripts/04-debloat.sh packages/optional.txt
 # scripts/restore.sh re-enables everything listed here, commented or not.
 
+# --- Streaming apps ---
 # com.amazon.amazonvideo.livingroom          # Prime Video; wakes up in the background (~80 MB)
-# com.google.android.youtube.tvmusic         # YouTube Music (regular YouTube is separate)
-# com.google.android.apps.mediashell         # Chromecast built-in: casting from phones. ~40 MB RAM, always running
 # com.netflix.ninja                          # Netflix; starts itself at boot (~115 MB RAM)
 # com.google.android.youtube.tv              # YouTube
+# com.google.android.youtube.tvmusic         # YouTube Music
+
+# --- Features ---
+# com.google.android.apps.mediashell         # Chromecast built-in (casting from phones). ~40 MB RAM
+# com.google.android.katniss                 # Google Assistant: the remote's mic button stops working
+# com.google.android.tv.remote.service       # control the TV from the Google TV phone app
+# com.mitv.videoplayer                       # Mi video player; MiLink casting uses it
+
+# --- Xiaomi firmware updates ---
+# Disabling these stops Xiaomi update checks (and their network traffic). Re-enable them before
+# checking for a firmware update.
+# com.xiaomi.mitv.updateservice              # firmware / PatchWall update service
+# com.mitv.download.service                  # its download helper
+
+# --- Boxes and sticks only. NOT on TV sets: Live Channels is how a TV shows its tuner and inputs ---
+# com.google.android.tv                      # Live Channels

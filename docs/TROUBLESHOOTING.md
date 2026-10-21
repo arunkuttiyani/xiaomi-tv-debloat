@@ -21,7 +21,7 @@ That's Android's fallback home. Bring back the stock launcher:
 `adb -s $MIBOX_IP:5555 shell pm enable com.google.android.tvlauncher`, then press HOME.
 
 ## An app misbehaves after debloating
-Re-enable the last packages from `packages/debloat.txt` one at a time with
+Re-enable the last packages from `packages/common.txt` (or `patchwall.txt`) one at a time with
 `adb -s $MIBOX_IP:5555 shell pm enable <package>`, or run `scripts/restore.sh`.
 Please open an issue saying which package it was.
 
@@ -47,3 +47,24 @@ before disabling and gives up after 15 seconds.
 ## macOS: `grep` errors like "empty (sub)expression"
 Some setups alias `grep` to `ugrep`. The scripts run under `bash`, where the alias doesn't apply.
 If you copy commands into an interactive zsh session, use `/usr/bin/grep`.
+
+## A health check fails on a device that seems fine
+Health checks compare against what was running **before** each package is disabled, so a service
+that was never running isn't required. If a check still fails on a working device, run
+`scripts/debloat-step.sh <package>` on its own to see which check, and report it with your
+`scripts/01-connect.sh` output (see docs/DEVICES.md).
+
+## `03-audit.sh` lists packages as UNREVIEWED
+No list covers them yet, which is normal on models other than the Mi Box 4. Search the package name
+before disabling it. If it's clearly bloat or telemetry, disable it with
+`scripts/debloat-step.sh <package>` (health checks included) and please report it so it can be
+added to the lists.
+
+## Google TV: HOME still opens the Google TV home screen
+Replacing the Google TV home is experimental. `scripts/06-install-launcher.sh` re-enables the stock
+home if HOME doesn't switch. Please report your model and Android version.
+
+## TV sets: no picture from HDMI inputs or the tuner after debloating
+Re-enable Live Channels and anything chip-vendor related:
+`adb -s $MIBOX_IP:5555 shell pm enable com.google.android.tv`, then run `scripts/restore.sh` if needed.
+The default lists never disable these on purpose; only an edited `optional.txt` would.

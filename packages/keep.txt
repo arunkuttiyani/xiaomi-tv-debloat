@@ -1,32 +1,36 @@
-# DO NOT disable or remove these. Reference only; no script reads this file.
-# Disabling the wrong one can stop the remote, HDMI or Play apps from working, and some can make
-# the box fail to boot, at which point ADB can no longer fix it and only a factory reset helps.
+# DO NOT disable or remove these. scripts/04-debloat.sh refuses to touch anything listed here,
+# even if another list names it. '*' is a wildcard.
+# Disabling the wrong one can stop the remote, HDMI, picture or Play apps from working, and some
+# can make the device fail to boot. Then ADB can't fix it and only a factory reset helps.
 
 # --- Xiaomi: needed even though it tracks you (block its internet with NetGuard instead, step N) ---
-mitv.service                       # core Xiaomi TV service: remote keys, power timers, display; always running
-com.xiaomi.mitv.res                # Xiaomi system resources used by mitv.service
+mitv.service                                 # core Xiaomi TV service: remote keys, power timers, display; persistent
+com.xiaomi.mitv.res                          # Xiaomi system resources used by mitv.service
+com.xiaomi.android.tvsetup.partnercustomizer # receives the remote's shortcut buttons; remote pairing at setup
+com.xiaomi.mitv.tvplayer                     # TV sets: the TV tuner/input player
 
-# --- Amlogic chip (display, HDMI, CEC, Bluetooth remote) ---
-com.droidlogic                     # Amlogic platform service
-com.droidlogic.overlay             # Amlogic resource overlay
-com.droidlogic.ble                 # Bluetooth (remote) overlay
+# --- Chip vendor: display, HDMI, CEC, Bluetooth remote, TV inputs ---
+com.droidlogic*                              # Amlogic (boxes, sticks, some TVs)
+com.mediatek*                                # MediaTek (most Mi / Redmi TV sets)
+com.mstar*                                   # MStar (older TV sets)
 
 # --- Google core: Play Store apps (Netflix, YouTube...) need these ---
-com.google.android.gms             # Google Play services
-com.google.android.gsf             # Google services framework
-com.android.vending                # Play Store
-com.google.android.webview         # web views inside apps
-com.google.android.tv.remote.service  # remote control service
-com.google.android.katniss         # voice search (mic button on the remote)
-com.google.android.speech.pumpkin  # on-device voice commands
-com.google.android.inputmethod.latin  # on-screen keyboard
-com.google.android.tungsten.setupwraith  # setup wizard; disabling it can break the HOME button
-com.google.android.tvlauncher      # stock launcher: disabled by step L, but keep it installed as a fallback
+com.google.android.gms                       # Google Play services
+com.google.android.gsf                       # Google services framework
+com.android.vending                          # Play Store
+com.google.android.webview                   # web views inside apps
+com.google.android.speech.pumpkin            # on-device voice commands
+com.google.android.inputmethod.latin         # on-screen keyboard
+com.google.android.tungsten.setupwraith      # setup wizard; also remote pairing. Disabling can break HOME
+com.google.android.apps.tv.launcherx         # Google TV home: step L disables it only once Lite Home works
+com.google.android.tvlauncher                # Android TV home: step L disables it only once Lite Home works
 
 # --- Android system ---
+android
 com.android.systemui
-com.android.tv.settings            # Settings app (also hosts the resolution screen)
-com.android.providers.settings
-com.android.providers.tv
+com.android.tv.settings                      # Settings app (also hosts the resolution screen)
+com.android.providers.*
 com.android.bluetooth
-com.android.shell                  # ADB shell; needed to undo anything
+com.android.shell                            # ADB shell; needed to undo anything
+com.android.packageinstaller
+com.google.android.packageinstaller
