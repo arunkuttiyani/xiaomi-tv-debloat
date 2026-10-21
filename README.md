@@ -1,4 +1,4 @@
-# mibox4-debloat: Xiaomi TV debloat
+# xiaomi-tv-debloat
 
 Debloat a **Xiaomi TV box, stick or TV** (Mi Box, Mi TV Stick, Mi / Redmi TVs; Android TV or Google TV),
 cut off its telemetry, and replace the home screen with **Lite Home**: a tiny, fast launcher with no
@@ -39,7 +39,7 @@ other models are expected or experimental. See [docs/DEVICES.md](docs/DEVICES.md
 ## Quick start
 
 ```bash
-git clone https://github.com/arunkuttiyani/mibox4-debloat.git && cd mibox4-debloat
+git clone https://github.com/arunkuttiyani/xiaomi-tv-debloat.git && cd xiaomi-tv-debloat
 scripts/00-check-prereqs.sh                # A. tools on your computer
 # B. on the box: enable Developer options + USB debugging (see guide)
 export MIBOX_IP=192.168.1.50               # C. your box's IP
