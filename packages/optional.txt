@@ -1,0 +1,9 @@
+# Apps that are only bloat if you don't use them. All are commented out: remove the leading '#'
+# from the ones you never use, then run:  scripts/04-debloat.sh packages/optional.txt
+# scripts/restore.sh re-enables everything listed here, commented or not.
+
+# com.amazon.amazonvideo.livingroom          # Prime Video; wakes up in the background (~80 MB)
+# com.google.android.youtube.tvmusic         # YouTube Music (regular YouTube is separate)
+# com.google.android.apps.mediashell         # Chromecast built-in: casting from phones. ~40 MB RAM, always running
+# com.netflix.ninja                          # Netflix; starts itself at boot (~115 MB RAM)
+# com.google.android.youtube.tv              # YouTube

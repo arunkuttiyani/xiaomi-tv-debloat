@@ -1,0 +1,10 @@
+# personal data from your box (Wi-Fi name, settings)
+backups/
+
+# launcher build output and local signing key
+launcher/build/
+launcher/*.apk
+launcher/*.idsig
+launcher/*.keystore
+
+.DS_Store

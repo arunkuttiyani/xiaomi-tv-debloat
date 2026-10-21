@@ -1,0 +1,32 @@
+# DO NOT disable or remove these. Reference only; no script reads this file.
+# Disabling the wrong one can stop the remote, HDMI or Play apps from working, and some can make
+# the box fail to boot, at which point ADB can no longer fix it and only a factory reset helps.
+
+# --- Xiaomi: needed even though it tracks you (block its internet with NetGuard instead, step N) ---
+mitv.service                       # core Xiaomi TV service: remote keys, power timers, display; always running
+com.xiaomi.mitv.res                # Xiaomi system resources used by mitv.service
+
+# --- Amlogic chip (display, HDMI, CEC, Bluetooth remote) ---
+com.droidlogic                     # Amlogic platform service
+com.droidlogic.overlay             # Amlogic resource overlay
+com.droidlogic.ble                 # Bluetooth (remote) overlay
+
+# --- Google core: Play Store apps (Netflix, YouTube...) need these ---
+com.google.android.gms             # Google Play services
+com.google.android.gsf             # Google services framework
+com.android.vending                # Play Store
+com.google.android.webview         # web views inside apps
+com.google.android.tv.remote.service  # remote control service
+com.google.android.katniss         # voice search (mic button on the remote)
+com.google.android.speech.pumpkin  # on-device voice commands
+com.google.android.inputmethod.latin  # on-screen keyboard
+com.google.android.tungsten.setupwraith  # setup wizard; disabling it can break the HOME button
+com.google.android.tvlauncher      # stock launcher: disabled by step L, but keep it installed as a fallback
+
+# --- Android system ---
+com.android.systemui
+com.android.tv.settings            # Settings app (also hosts the resolution screen)
+com.android.providers.settings
+com.android.providers.tv
+com.android.bluetooth
+com.android.shell                  # ADB shell; needed to undo anything
