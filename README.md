@@ -10,6 +10,10 @@ other models are expected or experimental. See [docs/DEVICES.md](docs/DEVICES.md
 
 ![Lite Home](docs/images/home.png)
 
+| Control Center | Launcher settings |
+|---|---|
+| ![Control Center](docs/images/control-center.png) | ![Settings](docs/images/settings.png) |
+
 ## What you get
 
 - **Bloat and ads gone:**
@@ -24,12 +28,12 @@ other models are expected or experimental. See [docs/DEVICES.md](docs/DEVICES.md
   - The audit found Xiaomi's core TV service has a log uploader and tracks which app you use. Details are in [docs/FINDINGS.md](docs/FINDINGS.md).
   - It can't be removed safely, so the guide firewalls it with NetGuard.
 - **Lite Home launcher:**
-  - About 30 KB and 16 MB of RAM (the stock launcher uses ~70 MB).
-  - Opens in under 0.4 s and runs at 60 fps.
-  - Has a live Wi-Fi indicator.
-  - New apps appear automatically.
-  - Long-press a tile to reorder, hide or uninstall.
-  - It has **no internet permission**.
+  - About 45 KB, with **no internet permission**.
+  - A clean grid: the selected app is bright and slightly larger, the rest softly dimmed.
+  - A compact, tvOS-style **Control Center**: Wi-Fi, Bluetooth, display, storage and memory.
+  - **Hidden launcher settings:** apps per row, tile size, app names, animation level, clock and more.
+  - Runs at about 97% on-time frames on a Mi Box 4. Works on Android 5+ at any screen size.
+  - New apps appear automatically. Hold OK on a tile to move, hide or uninstall it.
 - **Fixes:**
   - the right output resolution (the box can pick 720p on a 1080p screen);
   - "Don't keep activities" off;
@@ -97,5 +101,5 @@ of it. Still, it's your device. This project isn't affiliated with Xiaomi, Googl
 
 ## License
 
-MIT. See [LICENSE](LICENSE). The Settings gear icon is from Google's Material Design icons
+MIT. See [LICENSE](LICENSE). The launcher's icons are from Google's Material Design icons
 (Apache 2.0); see [NOTICE](NOTICE).

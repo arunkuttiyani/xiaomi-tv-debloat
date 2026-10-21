@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Lite Home: a minimal Android TV launcher. No INTERNET permission, so it cannot send anything anywhere. -->
+<!-- Lite Home: a minimal Android TV launcher. No INTERNET permission: it cannot send anything anywhere.
+     Network / Wi-Fi / Bluetooth permissions are read-only status for the Control Center panel. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.lite.home"
-    android:versionCode="2"
-    android:versionName="2.0">
+    android:versionCode="3"
+    android:versionName="3.0">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="28" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
-    <!-- read-only network state for the status icon; still no INTERNET permission -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <application
         android:label="Lite Home"
@@ -38,5 +39,10 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".SettingsActivity"
+            android:label="Lite Home settings"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape" />
     </application>
 </manifest>

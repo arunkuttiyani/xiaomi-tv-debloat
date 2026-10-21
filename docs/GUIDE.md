@@ -208,25 +208,71 @@ Things deliberately **not** changed:
 launcher/build.sh
 ```
 
-Produces `launcher/LiteHome.apk`, about 30 KB. It builds with the plain SDK tools: no Gradle,
+Produces `launcher/LiteHome.apk`, about 45 KB. It builds with the plain SDK tools: no Gradle,
 no Android Studio, no libraries. The first build creates a throwaway signing key in `launcher/`
 that is git-ignored; keep it so later builds install over the top.
 
+![Lite Home](images/home.png)
+
 What Lite Home is:
 
-- **One screen:** a clock, a network indicator and a grid of your apps' banners.
+- **One screen:** a clock, a network pill at the top right and a grid of your apps' banners.
+  The selected app is shown at full brightness and slightly larger; the others are softly dimmed.
 - **No internet permission at all.** Android itself stops it from connecting to anything. It only
-  reads the network status to draw the Wi-Fi icon.
-- **Light and fast:** about 16 MB of RAM (the stock launcher uses about 70 MB), opens in under
-  0.4 s, and runs at 60 fps on the box (99% of frames under 16 ms).
-- **Network chip, top right:** shows Wi-Fi strength, Ethernet, offline, or `!` for "connected but
-  no internet". Press **UP** from the top row and **OK** to open network settings.
-- **Apps update themselves:** new apps appear as soon as they're installed, removed apps disappear.
-- **Long-press OK** (or the menu button) on a tile to move it left or right, move it to the start,
-  hide it, open App info or uninstall. Long-press **Settings** to show hidden apps again or reset
-  the order.
-- **Square-icon apps** get a tile coloured from their own icon. The background softly takes on the
-  colour of the focused app.
+  reads network, Wi-Fi and Bluetooth status for the pill and the Control Center.
+- **Light and fast:** about 45 KB, about 25 MB of RAM, and on the Mi Box 4 about 97% of frames
+  render on time while moving around the grid (median 6 ms). It avoids soft shadows, extra overlay
+  layers and double backgrounds, which measured as the main causes of dropped frames on this
+  class of GPU.
+- **Fits any screen:** the grid sizes itself to the screen (720p, 1080p, 4K, any density) and runs
+  on Android 5 and newer.
+- **Apps update themselves:** new apps appear as soon as they're installed; removed apps disappear.
+
+**Remote controls**
+
+| Where | Press | Does |
+|---|---|---|
+| An app | OK | open it |
+| An app | hold OK (or MENU) | Move (arrows, then OK), Hide, App info, Uninstall |
+| Last app in a row | RIGHT | open the Control Center |
+| Network pill (UP from the top row) | OK | open the Control Center |
+| Network pill | hold OK (or MENU) | **launcher settings** |
+| Settings tile | hold OK | launcher settings |
+| Control Center | LEFT or BACK | close it |
+
+**Control Center**
+
+![Control Center](images/control-center.png)
+
+A compact panel at the top right, styled after tvOS:
+- the time and date;
+- **Wi-Fi:** signal, link speed and IP address;
+- **Bluetooth:** on or off, and paired devices such as the remote;
+- **Display & sound:** opens the resolution and audio settings;
+- **Storage & memory:** free space and free RAM.
+
+The selected row turns white. OK opens the matching system settings page.
+
+**Launcher settings (hidden)**
+
+![Lite Home settings](images/settings.png)
+
+Nothing on the home screen shows that settings exist: hold OK on the network pill to open them.
+
+| Setting | Options |
+|---|---|
+| Apps per row | 4, 5, 6 |
+| Tile size | Small, Medium, Large (shrinks automatically if the row doesn't fit) |
+| App names | Always, Selected app only, Never |
+| Animations | Full, Reduced, Off: use Reduced or Off on slower TVs |
+| Background follows the selected app | On, Off |
+| Clock | System, 12-hour, 24-hour |
+| Show the date | On, Off |
+| RIGHT at the end of a row opens Control Center | On, Off |
+| Show hidden apps / Reset app order | actions |
+| Set as default home screen | asks Android to make Lite Home the home app (see step L) |
+
+Settings are kept across updates, together with your app order and hidden apps.
 
 Source: [`launcher/src/dev/lite/home/`](../launcher/src/dev/lite/home/).
 
@@ -248,7 +294,9 @@ This script:
 If HOME still doesn't open Lite Home afterwards, it re-enables those launchers and stops.
 
 Why disable the stock launcher? Android TV always gives the built-in launcher priority over any
-other, so "set default home" has no effect while it's enabled. Android's built-in fallback home
+other, so "set default home" has no effect while it's enabled. (Lite Home's own **Set as default
+home screen** setting uses Android's official request on Android 10+, and the Home-app settings page
+on older versions; on most TV builds the stock launcher still wins, which is why this step exists.) Android's built-in fallback home
 stays as a safety net, and step P brings the stock launcher back.
 
 **Google TV devices** (Xiaomi TV Box S 2nd gen, Google TV sets): this step is **experimental**. The

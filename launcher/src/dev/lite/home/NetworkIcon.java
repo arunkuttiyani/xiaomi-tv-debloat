@@ -6,7 +6,7 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.View;
 
-/** Wi-Fi / Ethernet / offline glyph drawn with a few strokes, so it stays crisp and costs no assets. */
+/** Wi-Fi / Ethernet / offline glyph drawn with a few strokes; recolourable for focused (white) tiles. */
 class NetworkIcon extends View {
 
     static final int OFFLINE = 0, WIFI = 1, ETHERNET = 2;
@@ -22,8 +22,13 @@ class NetworkIcon extends View {
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeCap(Paint.Cap.ROUND);
         }
-        on.setColor(0xFFFFFFFF);
-        off.setColor(0x40FFFFFF);
+        setColor(0xFFFFFFFF);
+    }
+
+    void setColor(int color) {
+        on.setColor(color);
+        off.setColor((color & 0x00FFFFFF) | 0x40000000);
+        invalidate();
     }
 
     void set(int type, int level, boolean validated) {
@@ -36,13 +41,12 @@ class NetworkIcon extends View {
 
     @Override protected void onDraw(Canvas c) {
         float w = getWidth(), h = getHeight(), s = Math.min(w, h);
-        float sw = s * 0.085f;
+        float sw = s * 0.09f;
         on.setStrokeWidth(sw);
         off.setStrokeWidth(sw);
         float cx = w / 2, by = h / 2 + s * 0.32f;
 
         if (type == ETHERNET) {
-            on.setStyle(Paint.Style.STROKE);
             r.set(cx - s * 0.32f, h / 2 - s * 0.22f, cx + s * 0.32f, h / 2 + s * 0.26f);
             c.drawRoundRect(r, sw, sw, on);
             for (int i = -1; i <= 1; i++) {
@@ -50,12 +54,10 @@ class NetworkIcon extends View {
                 c.drawLine(x, h / 2 - s * 0.05f, x, h / 2 + s * 0.1f, on);
             }
         } else {
-            // three arcs + dot, lit from the inside out
             for (int i = 0; i < 3; i++) {
                 float rad = s * (0.2f + 0.16f * i);
                 r.set(cx - rad, by - rad, cx + rad, by + rad);
-                boolean lit = type == WIFI && level > i;
-                c.drawArc(r, 225, 90, false, lit ? on : off);
+                c.drawArc(r, 225, 90, false, type == WIFI && level > i ? on : off);
             }
             on.setStyle(Paint.Style.FILL);
             off.setStyle(Paint.Style.FILL);
@@ -64,9 +66,7 @@ class NetworkIcon extends View {
             off.setStyle(Paint.Style.STROKE);
             if (type == OFFLINE) c.drawLine(cx - s * 0.36f, by - s * 0.62f, cx + s * 0.36f, by + s * 0.02f, on);
         }
-
         if (type != OFFLINE && !validated) {
-            // small "!" badge: connected but no internet
             float bx = w - sw * 1.2f, top = h / 2 - s * 0.36f;
             c.drawLine(bx, top, bx, top + s * 0.3f, on);
             on.setStyle(Paint.Style.FILL);

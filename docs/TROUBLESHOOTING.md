@@ -68,3 +68,16 @@ home if HOME doesn't switch. Please report your model and Android version.
 Re-enable Live Channels and anything chip-vendor related:
 `adb -s $MIBOX_IP:5555 shell pm enable com.google.android.tv`, then run `scripts/restore.sh` if needed.
 The default lists never disable these on purpose; only an edited `optional.txt` would.
+
+## Lite Home: where are the settings?
+They're hidden on purpose. Press UP from the top row to select the network pill, then **hold OK**
+(or press MENU). Holding OK on the Settings tile works too.
+
+## Lite Home feels slow on my TV
+Open the launcher settings and set **Animations** to *Reduced* or *Off*. Turning off
+**Background follows the selected app** saves a little more. Both apply when you go back home.
+
+## "Set as default home screen" does nothing
+Many Android TV and Google TV builds keep their own launcher in charge whatever you choose. Disable
+the stock launcher with ADB (step L does this): the app shows the exact command when the request
+doesn't take effect.
