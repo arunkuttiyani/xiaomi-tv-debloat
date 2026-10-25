@@ -34,8 +34,8 @@ final class ControlPanel {
 
     // Compact, tvOS-like proportions: a narrow panel, slim rows, small type.
     static final int WIDTH = 300, ROW_H = 54;
-    private static final int TILE = 0xFF1E2430, TILE_FOCUS = Color.WHITE;
-    private static final int PANEL = 0xFF12161E;
+    private static final int TILE = 0xFF161618, TILE_FOCUS = Color.WHITE;
+    private static final int PANEL = 0xFF0C0C0D;
 
     /** One row: icon, title, subtitle. Static, package-private fields (see Callbacks for why). */
     static class Row {

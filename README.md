@@ -1,8 +1,9 @@
 # xiaomi-tv-debloat
 
 Debloat a **Xiaomi TV box, stick or TV** (Mi Box, Mi TV Stick, Mi / Redmi TVs; Android TV or Google TV),
-cut off its telemetry, and replace the home screen with **Lite Home**: a tiny, fast launcher with no
-internet access. No root, nothing flashed, and every step can be undone.
+cut off its telemetry, block ads and trackers on the whole box with **Simple Ad Blocker**, and replace
+the home screen with **Lite Home**: a tiny, fast, Apple TV style launcher. No root, nothing flashed,
+and every step can be undone.
 
 The scripts detect your device: Android TV or Google TV, whether PatchWall is installed, and which
 chip it uses. They then pick the right package lists. **Fully tested on the Mi Box S / Mi Box 4**;
@@ -26,16 +27,24 @@ other models are expected or experimental. See [docs/DEVICES.md](docs/DEVICES.md
   disabled one at a time, with health checks and automatic rollback after each.
 - **Xiaomi telemetry contained:**
   - The audit found Xiaomi's core TV service has a log uploader and tracks which app you use. Details are in [docs/FINDINGS.md](docs/FINDINGS.md).
-  - It can't be removed safely, so the guide firewalls it with NetGuard.
-- **Lite Home launcher:**
-  - About 55 KB, no tracking, no third-party code. Its only network use is the optional weather.
-  - A clean grid: the selected app is bright and slightly larger, the rest softly dimmed.
-  - A compact, tvOS-style **Control Center**: Wi-Fi, Bluetooth, display, storage and memory.
+  - It can't be removed safely, so Simple Ad Blocker (below) keeps its known servers off the network.
+- **Simple Ad Blocker:** an on-device DNS filter for every app, browsers included.
+  - About 580,000 blocked domains merged from HaGeZi, OISD, StevenBlack, AdGuard and 1Hosts, plus
+    Xiaomi's tracking servers. No outside service: lookups go to your own router.
+  - Always on: foreground service, restarted after boot, updates or a crash. Lists refresh weekly.
+  - Details and install: [ad-blocker/README.md](ad-blocker/README.md).
+- **Lite Home launcher** (v4):
+  - About 140 KB, no tracking, no third-party code. Its only network use is the optional weather.
+  - Apple TV style: a black screen, the first row as a frosted dock, the selected app's name in
+    large type over a soft glow in its colour. Press down and the full grid fades in.
+  - Selected tiles lift with a crisp rim and shadow; the selection never slides between tiles.
+  - A compact **Control Center**: Wi-Fi, Bluetooth, display and storage.
   - **Hidden launcher settings:** apps per row, tile size, app names, animation level, clock and more.
   - **Weather beside the clock**, located from the TV's time zone. After a minute idle it unfolds
     to the right ("Partly cloudy · 17° / 11°"). HTTPS only, and one switch turns it off.
-  - Runs at about 97% on-time frames on a Mi Box 4. Works on Android 5+ at any screen size.
-  - New apps appear automatically. Hold OK on a tile to move, hide or uninstall it.
+  - Runs smoothly on a Mi Box 4 (no dropped frames in testing). Works on Android 5+ at any screen size.
+  - New apps appear automatically. Hold OK on a tile and it jiggles: move it with the arrows. MENU
+    hides, shows app info or uninstalls it.
 - **Fixes:**
   - the right output resolution (the box can pick 720p on a 1080p screen);
   - "Don't keep activities" off;
@@ -55,7 +64,7 @@ scripts/03-audit.sh                        # F. see what's phoning home (read-on
 scripts/04-debloat.sh                      # G. shows the plan for your device, then disables one at a time
 scripts/05-tweaks.sh                       # I+J. screensaver, speed, storage
 scripts/06-install-launcher.sh             # K+L. build and install Lite Home
-#                                            M. resolution, N. NetGuard: see guide
+#                                            M. resolution, N. ad blocker: see guide
 scripts/07-verify.sh --reboot              # O. reboot and check everything
 ```
 
@@ -77,6 +86,7 @@ packages/optional.txt     apps to disable only if you don't use them
 packages/keep.txt         packages that are never touched, with reasons (enforced)
 scripts/                  one script per step (bash; macOS and Linux)
 launcher/                 Lite Home source (plain Java, no libraries) and build script
+ad-blocker/               Simple Ad Blocker source, blocklist builder and build script
 ```
 
 ## Requirements

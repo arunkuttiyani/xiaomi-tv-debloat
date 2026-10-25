@@ -8,3 +8,10 @@ launcher/*.idsig
 launcher/*.keystore
 
 .DS_Store
+
+# Simple Ad Blocker build output, local signing key and the generated blocklist and local signing key
+ad-blocker/build/
+ad-blocker/*.apk
+ad-blocker/*.idsig
+ad-blocker/*.keystore
+ad-blocker/assets/blocklist.bin

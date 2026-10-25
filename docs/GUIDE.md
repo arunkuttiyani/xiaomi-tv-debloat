@@ -361,7 +361,22 @@ switches back by itself unless you confirm.
 Mi boxes and sticks top out at **60 Hz** over HDMI. 120 or 144 Hz isn't possible on that hardware.
 HDR10 turns on automatically for HDR content when the screen supports it.
 
-## N. Firewall Xiaomi's tracking service with NetGuard
+## N. Block ads, trackers and Xiaomi telemetry
+
+**Recommended: Simple Ad Blocker**, the on-device DNS filter in `ad-blocker/` (see its
+[README](../ad-blocker/README.md)). It blocks about 580,000 ad, pop-up, tracker and Xiaomi telemetry
+domains for every app, browsers included, with no outside service, and it stays on by itself.
+
+```bash
+ad-blocker/build.sh && adb install -r ad-blocker/SimpleAdBlocker.apk
+adb shell appops set dev.lite.shield ACTIVATE_VPN allow
+adb shell am start -n dev.lite.shield/.ShieldActivity       # press "Turn on"
+```
+
+Android allows one VPN at a time, so it replaces NetGuard. If you'd rather cut Xiaomi's service off
+completely (not just its known servers), use NetGuard instead:
+
+### NetGuard (alternative)
 
 `mitv.service` is Xiaomi's core TV service on Mi boxes and sticks. TV sets have similar system
 services. It can't be disabled safely (see
@@ -394,7 +409,7 @@ Reboots the box, waits for it, and checks:
 - boot completed;
 - the core services are running and the home screen shows;
 - there were no crashes;
-- NetGuard is running.
+- the ad blocker (or NetGuard) is running.
 
 It also prints the output mode, free RAM and free storage.
 

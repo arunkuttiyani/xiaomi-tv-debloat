@@ -9,7 +9,10 @@ final class AppInfo {
     Drawable banner;        // 16:9 TV banner, or null
     Drawable icon;          // square icon, used when there is no banner
     int[] washColors;       // gradient behind square icons
-    int tint;               // dark accent colour for the background tint
+    int tint;               // dark accent colour taken from the artwork
+    int glowColor;                // the artwork's most vivid colour, for the ambient glow (Art.vividColor)
+    android.graphics.Bitmap art;      // the tile's artwork at its exact resting size
+    android.graphics.Bitmap artLift;  // the same at the selected (lifted) size
     Intent launch;
     boolean system;
 }

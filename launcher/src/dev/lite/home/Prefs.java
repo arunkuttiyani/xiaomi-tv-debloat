@@ -26,9 +26,9 @@ final class Prefs {
     final boolean tint, date, edgeCc, weather;
 
     private Prefs(SharedPreferences p) {
-        cols = p.getInt(COLS, 5);
+        cols = p.getInt(COLS, 4); // CleanMyTV: four 180 dp tiles across a 1080p TV
         tile = p.getInt(TILE, TILE_MEDIUM);
-        labels = p.getInt(LABELS, LABELS_ALWAYS);
+        labels = p.getInt(LABELS, LABELS_FOCUSED); // v4: names under the selected tile only, CleanMyTV style
         motion = p.getInt(MOTION, MOTION_FULL);
         clock = p.getInt(CLOCK, CLOCK_SYSTEM);
         tint = p.getBoolean(TINT, true);
@@ -52,6 +52,6 @@ final class Prefs {
 
     /** Preferred tile width in dp; the grid shrinks it if the columns don't fit the screen. */
     int tileWidthDp() {
-        return tile == TILE_SMALL ? 128 : tile == TILE_LARGE ? 180 : 150;
+        return tile == TILE_SMALL ? 156 : tile == TILE_LARGE ? 200 : 180; // CleanMyTV designs at 180 x 101
     }
 }

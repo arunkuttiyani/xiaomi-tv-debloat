@@ -1,3 +1,44 @@
 launcher/res/drawable/gear.xml, ic_bluetooth.xml, ic_display.xml and ic_storage.xml contain glyphs
 from Google's Material Design icons, Copyright Google LLC, licensed under the Apache License,
 Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+
+launcher/assets/fonts/Outfit-Light.ttf and Outfit-Regular.ttf are the Outfit typeface (Outfit Project
+Authors), licensed under the SIL Open Font License 1.1: see launcher/FONT-LICENSE-OFL.txt.
+
+The launcher's look follows CleanMyTV (https://github.com/Supopo/CleanMyTV, MIT licence, Copyright (c)
+2026 Gathin): the dock band, tile sizes, glow, motion values and the colour sampling in
+launcher/src/dev/lite/home/Art.java (vividColor, adapted from its AppAdapter) are based on its design.
+
+ad-blocker/ does not include any blocklist. Its build (ad-blocker/tools/build_blocklist.py) downloads
+public lists from HaGeZi, OISD, StevenBlack, AdGuard and 1Hosts at build time, each under its own
+licence, and merges them on your machine.
+
+--- CleanMyTV licence (applies to the parts adapted from it) ---
+
+MIT License
+
+Copyright (c) 2026 Gathin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+The Outfit typeface in launcher/app/src/main/res/font/outfit.ttf is copyright
+The Outfit Project Authors and licensed under the SIL Open Font License 1.1,
+see launcher/FONT-LICENSE-OFL.txt.

@@ -29,7 +29,7 @@ import java.util.Set;
  */
 public class SettingsActivity extends Activity {
 
-    private static final int TILE = 0xFF1E2430, TILE_FOCUS = Color.WHITE;
+    private static final int TILE = 0xFF161618, TILE_FOCUS = Color.WHITE;
 
     /** One setting row. Static, package-private (see Callbacks for why). */
     static class Item {
@@ -53,7 +53,7 @@ public class SettingsActivity extends Activity {
         prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE);
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(0xFF0B0E14);
+        root.setBackgroundColor(0xFF050506);
         ScrollView scroll = new ScrollView(this);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setClipToPadding(false);
@@ -70,17 +70,16 @@ public class SettingsActivity extends Activity {
         header("Lite Home settings", "Changes apply when you go back to the home screen.");
 
         section("Layout");
-        choice("Apps per row", Prefs.COLS, new String[]{"4", "5", "6"}, new int[]{4, 5, 6}, 5);
+        choice("Apps per row", Prefs.COLS, new String[]{"4", "5", "6"}, new int[]{4, 5, 6}, 4);
         choice("Tile size", Prefs.TILE, new String[]{"Small", "Medium", "Large"}, new int[]{0, 1, 2}, 1);
-        choice("App names", Prefs.LABELS, new String[]{"Always", "Selected app only", "Never"}, new int[]{0, 1, 2}, 0);
+        choice("App names", Prefs.LABELS, new String[]{"Always", "Selected app only", "Never"}, new int[]{0, 1, 2}, Prefs.LABELS_FOCUSED);
 
         section("Look and feel");
         setSub(choice("Animations", Prefs.MOTION, new String[]{"Full", "Reduced", "Off"}, new int[]{0, 1, 2}, 0).sub,
                 "Reduced or Off for slower TVs");
-        toggle("Background follows the selected app", Prefs.TINT, true);
+        toggle("Ambient glow behind the selected app", Prefs.TINT, true);
         choice("Clock", Prefs.CLOCK, new String[]{"System", "12-hour", "24-hour"}, new int[]{0, 1, 2}, 0);
         toggle("Show the date", Prefs.DATE, true);
-        toggle("RIGHT at the end of a row opens Control Center", Prefs.EDGE_CC, true);
 
         section("Weather");
         Item wx = toggle("Weather", Prefs.WEATHER, true);
@@ -97,7 +96,7 @@ public class SettingsActivity extends Activity {
             prefs.edit().remove("order").apply();
             Toast.makeText(this, "Apps are back in alphabetical order.", Toast.LENGTH_SHORT).show();
         });
-        setSub(reset.sub, "Alphabetical, Settings last");
+        setSub(reset.sub, "Alphabetical");
 
         section("System");
         Item home = action("Set as default home screen", () -> DefaultHome.request(this));

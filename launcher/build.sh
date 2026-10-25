@@ -21,7 +21,8 @@ fi
 
 rm -rf build && mkdir -p build/gen build/classes build/res
 "$BT/aapt2" compile --dir res -o build/res/res.zip
-"$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml --java build/gen \
+ASSETS=""; [ -d assets ] && ASSETS="-A assets"   # bundled fonts
+"$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml --java build/gen $ASSETS \
     --min-sdk-version 21 --target-sdk-version 28 -o build/unsigned.apk build/res/res.zip
 javac -nowarn -Xlint:-options --release 8 -classpath "$JAR" -d build/classes \
     $(find src build/gen -name '*.java')

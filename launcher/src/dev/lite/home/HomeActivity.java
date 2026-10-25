@@ -16,9 +16,10 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.Typeface;
+import android.graphics.Rect;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.ConnectivityManager;
@@ -32,6 +33,7 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.Gravity;
@@ -40,7 +42,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
-import android.view.animation.OvershootInterpolator;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -51,6 +52,7 @@ import android.widget.Toast;
 import java.net.Inet4Address;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -60,66 +62,83 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Lite Home: a clock, a grid of app banners and a Control Center panel on the right for network,
- * Bluetooth, display and storage, and optional weather beside the clock. No tracking, no background
- * work; the only network use is the weather (see Weather.java), which the Weather setting turns off.
+ * Lite Home 4: an Apple TV style home on a black screen.
  *
- *   Hold OK (or MENU) on a tile      move, hide or manage the app
- *   OK on the network pill           Control Center (also: RIGHT at the end of a row)
- *   Hold OK on the network pill      launcher settings (SettingsActivity)
+ *   - a greeting, a thin Outfit clock with the weather beside it, and the date;
+ *   - Wi-Fi and Settings pills at the top right;
+ *   - the first row is a dock in a rounded band, with the focused app's name above it in large type
+ *     and an ambient glow made from its artwork; moving down slides the grid up and the glow away;
+ *   - the selected tile lifts, gains a bright rim and a soft shadow, and shows its name; the selection
+ *     fades out on one tile and in on the next, it never slides across the screen.
  *
- * Performance notes, measured on a Mi Box 4 (Mali-450): soft shadows and per-animation GPU layers
- * caused most dropped frames, so focus is shown by size and brightness only (unselected tiles are
- * veiled). An outline was tried too, but its stroke aliased at the corners when scaled.
+ *   Hold OK on a tile                 jiggle mode: move it with the arrows, OK when done
+ *   MENU on a tile                    hide, app info, uninstall
+ *   OK on the Wi-Fi pill              Control Center (also: RIGHT at the end of a row)
+ *   Hold OK on either pill            launcher settings
+ *
+ * Design after CleanMyTV (github.com/Supopo/CleanMyTV, MIT): see GlassView and Art.vividColor.
+ * Performance: tiles never redraw on focus; rim and shadow are separate views that only fade, the focused tile
+ * scales on the RenderThread, and the glow cross-fades two tiny stretched bitmaps.
  */
 public class HomeActivity extends Activity {
 
-    static final int BASE = 0xFF0B0E14;
     static final String SETTINGS_KEY = "__settings__";
-    // Launchers and the TV settings app are reached through the Settings tile instead.
+    // Launchers and the TV settings app: the Settings pill opens settings instead.
     static final Set<String> SKIP = new HashSet<>(Arrays.asList(
             "dev.lite.home", "com.google.android.tvlauncher",
             "com.google.android.apps.tv.launcherx", "com.android.tv.settings"));
 
     static final Interpolator EASE = new DecelerateInterpolator(2f);
-    static final Interpolator SETTLE = new OvershootInterpolator(1.1f);
+    static final Interpolator SETTLE = new android.view.animation.OvershootInterpolator(1.1f);
 
     // Layout, in dp
-    static final int SIDE = 48, HEADER = 112, GAP = 22;
+    // CleanMyTV's design: 180 x 101 dp tiles, four across a 1080p screen, 16 dp corners, a 10% lift.
+    static final int SIDE = 58, BAND_PAD = 14, MIN_GAP = 22, MAX_GAP = 40, DOCK_UP = 168, DOCK_BOTTOM = 40;
+    static final float LIFT = 1.10f;
+    static final long IDLE_MS = 60_000;
 
     float dp;
     SharedPreferences prefs;
     Prefs cfg;
     String cfgSignature;
-    int cols, cardW, cardH, rowH, rowsVisible;
+    int cols, cardW, cardH, rowH, dockH, dockW, gap, dockRest; // dp
+    float radius; // dp
+    int liftW, liftH;      // px: the selected tile's exact size, grown by whole pixels on each side
+    float liftX, liftY;    // the matching scale factors
 
-    FrameLayout root;
-    GradientDrawable backdrop;
-    ValueAnimator tintAnim;
-    int tint = 0xFF1B2433;
-    TextClock time, date;
-    LinearLayout weatherBox;
+    FrameLayout root, content, glowBox;
+    View band, topFade;
+    // the pills' own shelf: a title and a glow of their own instead of the last app's colour
+    final AppInfo wifiShelf = new AppInfo(), settingsShelf = new AppInfo();
+    BitmapDrawable glowMask;
+    int glowColor;
+    ValueAnimator glowFade;
+    TextView shelfTitle, greeting;
+    LinearLayout rows;
+    android.graphics.Bitmap shadowBmp; // one blurred shadow, shared by every tile (rebuilt when tiles resize)
+    GradientDrawable bandTint;
+    TextClock time, ampm, date;
+    LinearLayout weatherBox, wifiPill, settingsPill;
     WeatherIcon wxIcon;
-    TextView wxTemp, wxDetails;
+    TextView wxTemp, wxDetails, wifiLabel;
+    NetworkIcon wifiIcon;
     ValueAnimator wxExpand;
     boolean wxExpanded;
-    static final long IDLE_MS = 60_000;
-    final Runnable wxIdle = this::expandWeather;
-    final android.os.Handler wxHandler = new android.os.Handler();
-    final Runnable wxTick = this::weatherTick; // method reference: d8 8.2 crashes on anonymous classes
-    Callbacks.SteadyScroll scroller;
-    LinearLayout grid;
-    LinearLayout pill;
-    TextView pillLabel;
-    NetworkIcon pillNet;
     ControlPanel panel;
-    ObjectAnimator scrollAnim;
+
+    final Handler handler = new Handler();
+    final Runnable wxIdle = this::expandWeather;
+    final Runnable wxTick = this::weatherTick; // method references: d8 8.2 crashes on anonymous classes
+    final Runnable greetTick = this::greetingTick;
+    final Runnable loadRun = this::loadNow;
+    int loadGen;
 
     List<AppInfo> apps = new ArrayList<>();
     final Map<String, Integer> rowOf = new HashMap<>();
-    AppInfo moving;
-    ObjectAnimator wiggle;
+    AppInfo moving, shelfApp;
+    Jiggle jiggle;
     String focusKey;
+    int focusRow = 0;
     boolean resumed, dirty = true, shownOnce;
     final NetState net = new NetState();
 
@@ -136,25 +155,23 @@ public class HomeActivity extends Activity {
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         dp = getResources().getDisplayMetrics().density;
-        prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE); // same file as v1/v2: keeps your order
+        prefs = getSharedPreferences(Prefs.FILE, MODE_PRIVATE); // same file as v1–v3: keeps your order
         applyPrefs();
 
         root = new FrameLayout(this);
-        backdrop = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{tint, BASE, BASE});
-        root.setBackground(backdrop);
-
-        buildGridArea();
+        root.setBackgroundColor(Color.BLACK);
+        buildGlow();
+        buildShelfTitle();
+        buildContent();
         buildHeader();
+        buildPills();
         panel = new ControlPanel(this);
         root.addView(panel.scrim, new FrameLayout.LayoutParams(-1, -1));
-        // Drops in at the top right, under the network pill, like tvOS's Control Center.
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(px(ControlPanel.WIDTH), -2, Gravity.END | Gravity.TOP);
         plp.setMargins(0, px(24), px(24), 0);
         root.addView(panel.view, plp);
         setContentView(root);
-        // The backdrop covers the whole screen; drawing the window background under it too would
-        // fill every pixel twice per frame.
-        getWindow().setBackgroundDrawable(null);
+        getWindow().setBackgroundDrawable(null); // root paints every pixel; don't draw the window under it too
         applyClockFormat();
 
         IntentFilter f = new IntentFilter();
@@ -177,126 +194,277 @@ public class HomeActivity extends Activity {
         updateStatus();
     }
 
-    /** Reads settings and works out a grid that fits this screen. */
+    /** Reads settings and sizes the tiles so the dock band fits the screen width. */
     private void applyPrefs() {
         cfg = Prefs.load(this);
         cfgSignature = cfg.signature();
         cols = Math.max(3, Math.min(7, cfg.cols));
         float screenW = getResources().getDisplayMetrics().widthPixels / dp;
         float screenH = getResources().getDisplayMetrics().heightPixels / dp;
-        float fit = (screenW - 2 * SIDE) / cols - GAP;
-        cardW = (int) Math.min(cfg.tileWidthDp(), fit);
-        cardH = Math.round(cardW * 0.586f); // TV banner shape
-        rowH = cardH + (cfg.labels == Prefs.LABELS_NEVER ? 30 : 48);
-        rowsVisible = Math.max(1, (int) ((screenH - HEADER) / rowH));
+        float inner = screenW - 2 * SIDE - 2 * BAND_PAD;
+        // the tile size you chose, shrunk only when the row can't fit it; the gaps spread the tiles
+        // across the band (32 dp at the default four), up to a limit, then the band hugs them
+        cardW = (int) Math.min(cfg.tileWidthDp(), (inner - (cols - 1) * MIN_GAP) / cols);
+        gap = cols > 1 ? (int) Math.min(MAX_GAP, (inner - cols * cardW) / (cols - 1)) : 0;
+        cardH = Math.round(cardW * 101f / 180f);
+        radius = 16f * Math.min(1f, cardW / 180f);
+        dockH = cardH + 2 * BAND_PAD;
+        dockW = cols * cardW + (cols - 1) * gap + 2 * BAND_PAD;
+        dockRest = Math.round(screenH - DOCK_BOTTOM - dockH); // the dock sits low, close to the bottom edge
+        // ~10% bigger, but by a whole number of pixels per side, so the lifted tile's edges and its
+        // artwork land exactly on screen pixels instead of being blended across two
+        int w = px(cardW), h = px(cardH);
+        liftW = w + 2 * Math.round(w * (LIFT - 1) / 2);
+        liftH = h + 2 * Math.round(h * (LIFT - 1) / 2);
+        liftX = liftW / (float) w;
+        liftY = liftH / (float) h;
+        rowH = cardH + (cfg.labels == Prefs.LABELS_NEVER ? 22 : 46);
     }
 
-    private void applyClockFormat() {
-        String f = cfg.clock == Prefs.CLOCK_12 ? "h:mm" : cfg.clock == Prefs.CLOCK_24 ? "HH:mm" : null;
-        time.setFormat12Hour(f != null ? f : "h:mm");
-        time.setFormat24Hour(f != null ? f : "HH:mm");
-        date.setVisibility(cfg.date ? View.VISIBLE : View.GONE);
+    /**
+     * CleanMyTV's ambient glow: one soft radial light, tinted with the focused app's most vivid colour,
+     * behind the dock's title. A single 480x270 mask stretched over the screen; changing app only changes
+     * its tint, so it costs nothing per frame beyond the colour fade.
+     */
+    private void buildGlow() {
+        glowBox = new FrameLayout(this);
+        int w = 480, h = 270;
+        android.graphics.Bitmap mask = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        paint.setShader(new android.graphics.RadialGradient(w * 0.32f, h * 0.48f, w * 0.66f,
+                new int[]{0x8CFFFFFF, 0x3DFFFFFF, 0x00FFFFFF}, new float[]{0f, 0.45f, 1f},
+                android.graphics.Shader.TileMode.CLAMP));
+        new android.graphics.Canvas(mask).drawRect(0, 0, w, h, paint);
+        glowMask = new BitmapDrawable(getResources(), mask);
+        glowMask.setFilterBitmap(true);
+        View light = new View(this);
+        light.setBackground(glowMask);
+        glowBox.addView(light, new FrameLayout.LayoutParams(-1, -1));
+        glowBox.setAlpha(0f);
+        root.addView(glowBox, new FrameLayout.LayoutParams(-1, -1));
+    }
+
+    private void tintGlow(int color) {
+        glowColor = color;
+        glowMask.setTint(color); // SRC_IN: the mask's shape, the app's colour
+        bandTint.setColor((color & 0x00FFFFFF) | 0x38000000);
+    }
+
+    private void buildShelfTitle() {
+        shelfTitle = new TextView(this);
+        shelfTitle.setTypeface(Fonts.light(this));
+        shelfTitle.setTextColor(Color.WHITE);
+        shelfTitle.setTextSize(48);
+        shelfTitle.setSingleLine(true);
+        shelfTitle.setEllipsize(TextUtils.TruncateAt.END);
+        shelfTitle.setAlpha(0f);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
+        lp.setMargins(px(dockLeft() + 4), px(dockRest - 98), px(SIDE), 0); // 48sp name, 40dp above the band
+        root.addView(shelfTitle, lp);
+    }
+
+    private void buildContent() {
+        content = new FrameLayout(this);
+        content.setClipChildren(false);
+        // The dock's band (CleanMyTV's glass_panel) is its own view so it fades on the RenderThread.
+        // Light frosted glass (CleanMyTV's light band) over a faint wash of the selected app's colour,
+        // which glides with the ambient glow as you move, so the dock takes on each app's mood.
+        band = new View(this);
+        bandTint = new GradientDrawable();
+        bandTint.setCornerRadius(px(radius + BAND_PAD));
+        bandTint.setColor(0x00000000);
+        GradientDrawable frost = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x2EFFFFFF, 0x0FFFFFFF});
+        frost.setCornerRadius(px(radius + BAND_PAD));
+        frost.setStroke(Math.max(1, px(1)), 0x40FFFFFF);
+        band.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{bandTint, frost}));
+        FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(px(dockW), px(dockH), Gravity.CENTER_HORIZONTAL);
+        content.addView(band, blp);
+        rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        rows.setGravity(Gravity.CENTER_HORIZONTAL);
+        rows.setClipChildren(false);
+        rows.setPadding(px(SIDE), 0, px(SIDE), px(160));
+        content.addView(rows, new FrameLayout.LayoutParams(-1, -2));
+        content.setTranslationY(px(dockRest));
+        root.addView(content, new FrameLayout.LayoutParams(-1, -2));
+
+        // Rows scrolling up fade out under the header instead of being cut off.
+        topFade = new View(this);
+        topFade.setAlpha(0f); // only in the grid: in the dock the glow runs up behind the clock
+        topFade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0xFF000000, 0xFF000000, 0xFF000000, 0x00000000}));
+        root.addView(topFade, new FrameLayout.LayoutParams(-1, px(DOCK_UP + 8))); // solid under the header, clear by the first grid row
     }
 
     private void buildHeader() {
-        LinearLayout clock = new LinearLayout(this);
-        clock.setOrientation(LinearLayout.VERTICAL);
-        time = new TextClock(this);
-        time.setTextColor(Color.WHITE);
-        time.setTextSize(40);
-        time.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-        date = new TextClock(this);
-        date.setFormat12Hour("EEEE, d MMMM");
-        date.setFormat24Hour("EEEE, d MMMM");
-        date.setTextColor(0x99FFFFFF);
-        date.setTextSize(15);
-        // time, then the weather (condition icon + temperature) on the same line
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+
+        greeting = new TextView(this);
+        greeting.setTypeface(Fonts.regular(this));
+        greeting.setTextColor(0x8CFFFFFF);
+        greeting.setTextSize(11);
+        greeting.setLetterSpacing(0.2f);
+        header.addView(greeting);
+
         LinearLayout timeRow = new LinearLayout(this);
         timeRow.setGravity(Gravity.CENTER_VERTICAL);
+        time = new TextClock(this);
+        time.setTypeface(Fonts.light(this));
+        time.setTextColor(Color.WHITE);
+        time.setTextSize(48);
+        time.setIncludeFontPadding(false);
+        ampm = new TextClock(this);
+        ampm.setFormat12Hour("a");
+        ampm.setFormat24Hour("a"); // shown only in 12-hour mode, which can be forced on a 24-hour system
+        ampm.setTypeface(Fonts.regular(this));
+        ampm.setTextColor(0xB3FFFFFF);
+        ampm.setTextSize(15);
+        ampm.setPadding(px(6), px(14), 0, 0);
         timeRow.addView(time);
+        timeRow.addView(ampm);
+
+        // Weather beside the clock; the details unfold to the right after a minute without input.
         weatherBox = new LinearLayout(this);
         weatherBox.setGravity(Gravity.CENTER_VERTICAL);
-        weatherBox.setPadding(px(20), px(2), 0, 0);
+        weatherBox.setPadding(px(22), px(2), 0, 0);
         weatherBox.setVisibility(View.GONE);
         wxIcon = new WeatherIcon(this);
         wxTemp = new TextView(this);
+        wxTemp.setTypeface(Fonts.light(this));
         wxTemp.setTextColor(Color.WHITE);
-        wxTemp.setTextSize(34);
-        wxTemp.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        wxTemp.setTextSize(30);
         wxTemp.setPadding(px(6), 0, 0, 0);
-        // Details that unfold to the right after a minute without input, e.g.
-        // "Partly cloudy · Rain expected · 17° / 11°". Revealed by a clip, so nothing re-lays out.
         wxDetails = new TextView(this);
+        wxDetails.setTypeface(Fonts.regular(this));
         wxDetails.setTextColor(0xCCFFFFFF);
-        wxDetails.setTextSize(17);
+        wxDetails.setTextSize(16);
         wxDetails.setSingleLine(true);
         wxDetails.setEllipsize(TextUtils.TruncateAt.END);
-        wxDetails.setMaxWidth(px(440)); // never reaches the network pill on the right
-        wxDetails.setPadding(px(18), px(4), 0, 0);
+        wxDetails.setMaxWidth(px(290)); // never reaches the pills
+        wxDetails.setPadding(px(16), px(4), 0, 0);
         wxDetails.setAlpha(0f);
-        weatherBox.addView(wxIcon, new LinearLayout.LayoutParams(px(54), px(54)));
+        weatherBox.addView(wxIcon, new LinearLayout.LayoutParams(px(46), px(46)));
         weatherBox.addView(wxTemp);
         weatherBox.addView(wxDetails);
         timeRow.addView(weatherBox);
-        clock.addView(timeRow);
-        clock.addView(date);
-        FrameLayout.LayoutParams clp = new FrameLayout.LayoutParams(-2, -2, Gravity.START | Gravity.TOP);
-        clp.setMargins(px(SIDE), px(26), 0, 0);
-        root.addView(clock, clp);
+        header.addView(timeRow);
 
-        // Network pill, top right. OK: Control Center. Hold OK or MENU: launcher settings.
-        pill = new LinearLayout(this);
-        pill.setGravity(Gravity.CENTER_VERTICAL);
-        pill.setPadding(px(14), px(8), px(16), px(8));
-        pill.setFocusable(false); // enabled once the grid holds focus, see buildGrid()
-        pill.setClickable(true);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(px(22));
-        bg.setColor(0xFF1C222D);
-        pill.setBackground(bg);
-        pillNet = new NetworkIcon(this);
-        pillLabel = new TextView(this);
-        pillLabel.setTextColor(Color.WHITE);
-        pillLabel.setTextSize(15);
-        pillLabel.setPadding(px(10), 0, 0, 0);
-        pill.addView(pillNet, new LinearLayout.LayoutParams(px(24), px(24)));
-        pill.addView(pillLabel);
-        pill.setOnFocusChangeListener((v, has) -> {
-            ValueAnimator a = ValueAnimator.ofObject(new ArgbEvaluator(), has ? 0xFF1C222D : Color.WHITE, has ? Color.WHITE : 0xFF1C222D);
-            a.setDuration(cfg.ms(160));
-            a.addUpdateListener(va -> bg.setColor((int) va.getAnimatedValue()));
-            a.start();
-            int fg = has ? 0xFF111111 : Color.WHITE;
-            pillLabel.setTextColor(fg);
-            pillNet.setColor(fg);
-            v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f).setDuration(cfg.ms(200)).setInterpolator(EASE).start();
-        });
-        pill.setOnClickListener(v -> panel.open(v));
-        pill.setOnLongClickListener(v -> { openSettings(); return true; });
-        pill.setOnKeyListener((v, code, e) -> {
-            if (code == KeyEvent.KEYCODE_MENU && e.getAction() == KeyEvent.ACTION_UP) { openSettings(); return true; }
-            return false;
-        });
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.TOP);
-        lp.setMargins(0, px(36), px(SIDE), 0);
-        root.addView(pill, lp);
+        date = new TextClock(this);
+        date.setFormat12Hour("EEEE  d MMMM");
+        date.setFormat24Hour("EEEE  d MMMM");
+        date.setAllCaps(true);
+        date.setTypeface(Fonts.regular(this));
+        date.setTextColor(0x99FFFFFF);
+        date.setTextSize(13);
+        date.setLetterSpacing(0.15f);
+        header.addView(date);
+
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.START | Gravity.TOP);
+        lp.setMargins(px(SIDE), px(30), 0, 0);
+        root.addView(header, lp);
     }
 
-    private void buildGridArea() {
-        scroller = new Callbacks.SteadyScroll(this);
-        scroller.setVerticalScrollBarEnabled(false);
-        scroller.setClipChildren(false);
-        scroller.setClipToPadding(false);
-        scroller.setOverScrollMode(View.OVER_SCROLL_NEVER);
-        grid = new LinearLayout(this);
-        grid.setOrientation(LinearLayout.VERTICAL);
-        grid.setClipChildren(false);
-        grid.setClipToPadding(false);
-        grid.setPadding(px(SIDE - GAP / 2f), px(6), 0, px(200));
-        scroller.addView(grid);
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -1);
-        lp.topMargin = px(HEADER);
-        root.addView(scroller, lp);
+    private void buildPills() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        // the focused pill grows 6%; without this the bar cuts off its rounded outer end
+        bar.setClipChildren(false);
+        bar.setClipToPadding(false);
+        bar.setPadding(px(6), px(4), px(6), px(4));
+        wifiIcon = new NetworkIcon(this);
+        wifiLabel = pillText();
+        wifiPill = pill(wifiIcon, wifiLabel);
+        wifiPill.setOnClickListener(v -> panel.open(v));
+        ImageView gear = new ImageView(this);
+        gear.setImageResource(R.drawable.gear);
+        gear.setImageTintList(ColorStateList.valueOf(Color.WHITE));
+        TextView gearLabel = pillText();
+        gearLabel.setText("Settings");
+        settingsPill = pill(gear, gearLabel);
+        settingsPill.setOnClickListener(v -> startSettings(Settings.ACTION_SETTINGS));
+        pillKeys(wifiPill, null, settingsPill);
+        pillKeys(settingsPill, wifiPill, null);
+        bar.addView(wifiPill);
+        LinearLayout.LayoutParams gap = new LinearLayout.LayoutParams(-2, -2);
+        gap.leftMargin = px(12);
+        bar.addView(settingsPill, gap);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.TOP);
+        lp.setMargins(0, px(48), px(SIDE - 6), 0); // offsets the bar padding
+        root.addView(bar, lp);
+    }
+
+    private TextView pillText() {
+        TextView t = new TextView(this);
+        t.setTypeface(Fonts.regular(this));
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(15);
+        t.setPadding(px(10), 0, 0, 0);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        t.setMaxWidth(px(180)); // long network names never reach the weather
+        return t;
+    }
+
+    /**
+     * A frosted pill (CleanMyTV's pill_bg): a faint white gradient with a hairline edge; the focused
+     * one turns near-white with dark contents. Both states are prebuilt, so focus never re-renders it.
+     */
+    private LinearLayout pill(View icon, TextView label) {
+        LinearLayout p = new LinearLayout(this);
+        p.setGravity(Gravity.CENTER_VERTICAL);
+        p.setPadding(px(16), px(9), px(18), px(9));
+        p.setFocusable(false); // enabled once the grid holds focus, see buildGrid()
+        p.setClickable(true);
+        GradientDrawable idle = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{0x2EFFFFFF, 0x14FFFFFF});
+        idle.setCornerRadius(px(21));
+        idle.setStroke(Math.max(1, px(1)), 0x38FFFFFF);
+        GradientDrawable lit = new GradientDrawable();
+        lit.setCornerRadius(px(21));
+        lit.setColor(0xF5FFFFFF);
+        p.setBackground(idle);
+        p.addView(icon, new LinearLayout.LayoutParams(px(20), px(20)));
+        p.addView(label);
+        p.setOnFocusChangeListener((v, has) -> {
+            v.setBackground(has ? lit : idle);
+            int fg = has ? 0xFF111111 : Color.WHITE;
+            label.setTextColor(fg);
+            if (icon instanceof NetworkIcon) ((NetworkIcon) icon).setColor(fg);
+            else ((ImageView) icon).setImageTintList(ColorStateList.valueOf(fg));
+            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(cfg.ms(200)).setInterpolator(EASE).start();
+            if (has) {
+                slideTo(0, true);
+                showShelf(p == wifiPill ? wifiShelf : settingsShelf);
+            }
+        });
+        p.setOnLongClickListener(v -> { openSettings(); return true; });
+        return p;
+    }
+
+    /** Pills move only between themselves; DOWN returns to the tile you came from. */
+    private void pillKeys(View p, View left, View right) {
+        p.setOnKeyListener((v, code, e) -> {
+            if (code == KeyEvent.KEYCODE_MENU) {
+                if (e.getAction() == KeyEvent.ACTION_UP) openSettings();
+                return true;
+            }
+            if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
+            switch (code) {
+                case KeyEvent.KEYCODE_DPAD_LEFT: if (left != null) left.requestFocus(); return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: if (right != null) right.requestFocus(); return true;
+                case KeyEvent.KEYCODE_DPAD_UP: return true;
+                case KeyEvent.KEYCODE_DPAD_DOWN: focusLastCard(); return true;
+            }
+            return false;
+        });
+    }
+
+    private void applyClockFormat() {
+        boolean h24 = cfg.clock == Prefs.CLOCK_24 || (cfg.clock == Prefs.CLOCK_SYSTEM && android.text.format.DateFormat.is24HourFormat(this));
+        time.setFormat12Hour(h24 ? "HH:mm" : "h:mm");
+        time.setFormat24Hour(h24 ? "HH:mm" : "h:mm");
+        ampm.setVisibility(h24 ? View.GONE : View.VISIBLE);
+        date.setVisibility(cfg.date ? View.VISIBLE : View.GONE);
     }
 
     void openSettings() {
@@ -314,29 +482,42 @@ public class HomeActivity extends Activity {
         super.onResume();
         resumed = true;
         if (!Prefs.load(this).signature().equals(cfgSignature)) {
-            // settings changed: re-fit the grid and redraw everything
+            // settings changed: re-size everything and redraw
             applyPrefs();
             applyClockFormat();
+            resizeDock();
             shownOnce = false;
             dirty = true;
             refreshWeather(true);
         }
+        applyClockFormat(); // follows the TV's 12/24-hour setting when the clock is on "System"
         scheduleIdle();
+        greetingTick();
         updateStatus();
         if (dirty) load();
         maybeHintDefaultHome();
         showWeather(cfg.weather ? Weather.cached(prefs) : null);
-        wxHandler.removeCallbacks(wxTick);
-        wxHandler.post(wxTick); // refresh now if stale, then check every 10 minutes while visible
+        handler.removeCallbacks(wxTick);
+        handler.post(wxTick); // refresh now if stale, then check every 10 minutes while visible
     }
 
     @Override protected void onPause() {
         resumed = false;
-        wxHandler.removeCallbacks(wxTick); // no weather requests while an app is in front
-        wxHandler.removeCallbacks(wxIdle);
+        handler.removeCallbacks(wxTick); // no weather requests while an app is in front
+        handler.removeCallbacks(wxIdle);
+        handler.removeCallbacks(greetTick);
         collapseWeather(false);
         if (moving != null) endMove();
         super.onPause();
+    }
+
+    /** On a cold start the grid can be built before the window has focus; focus a tile once it does. */
+    @Override public void onWindowFocusChanged(boolean has) {
+        super.onWindowFocusChanged(has);
+        if (!has || panel.isOpen() || getCurrentFocus() != null || apps.isEmpty()) return;
+        View card = focusKey == null ? null : rows.findViewWithTag(focusKey);
+        if (card == null) card = rows.findViewWithTag(apps.get(0).key);
+        if (card != null) card.requestFocus();
     }
 
     @Override public void onBackPressed() {
@@ -347,11 +528,10 @@ public class HomeActivity extends Activity {
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        // HOME pressed while already home: close everything and glide back to the first tile.
+        // HOME pressed while already home: close everything and glide back to the first app.
         if (panel.isOpen()) panel.close();
         if (moving != null) endMove();
-        animateScroll(0);
-        View first = apps.isEmpty() ? null : grid.findViewWithTag(apps.get(0).key);
+        View first = apps.isEmpty() ? null : rows.findViewWithTag(apps.get(0).key);
         if (first != null) first.requestFocus();
     }
 
@@ -359,21 +539,26 @@ public class HomeActivity extends Activity {
     private void maybeHintDefaultHome() {
         if (prefs.getBoolean("hinted_home", false) || DefaultHome.isDefault(this)) return;
         prefs.edit().putBoolean("hinted_home", true).apply();
-        Toast.makeText(this, "Lite Home isn't your home screen yet. Hold OK on the Wi-Fi pill, then "
+        Toast.makeText(this, "Lite Home isn't your home screen yet. Hold OK on the Settings pill, then "
                 + "\"Set as default home screen\".", Toast.LENGTH_LONG).show();
+    }
+
+    private void greetingTick() {
+        int h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY);
+        greeting.setText(h >= 5 && h < 12 ? "GOOD MORNING" : h >= 12 && h < 17 ? "GOOD AFTERNOON"
+                : h >= 17 && h < 22 ? "GOOD EVENING" : "GOOD NIGHT");
+        handler.removeCallbacks(greetTick);
+        if (resumed) handler.postDelayed(greetTick, 60_000);
     }
 
     // ---- weather ------------------------------------------------------------------------------
 
     private void weatherTick() {
         refreshWeather(false);
-        wxHandler.postDelayed(wxTick, 10 * 60 * 1000L);
+        handler.postDelayed(wxTick, 10 * 60 * 1000L);
     }
 
-    /**
-     * Fetches new weather in the background when the cached copy is older than 30 minutes. The
-     * location comes from the system time zone (looked up once per time zone).
-     */
+    /** Fetches new weather in the background when the cached copy is older than 30 minutes. */
     void refreshWeather(boolean force) {
         if (!cfg.weather) { showWeather(null); return; }
         Weather cached = Weather.cached(prefs);
@@ -410,8 +595,8 @@ public class HomeActivity extends Activity {
     }
 
     private void scheduleIdle() {
-        wxHandler.removeCallbacks(wxIdle);
-        if (resumed && cfg.weather) wxHandler.postDelayed(wxIdle, IDLE_MS);
+        handler.removeCallbacks(wxIdle);
+        if (resumed && cfg.weather) handler.postDelayed(wxIdle, IDLE_MS);
     }
 
     private void expandWeather() {
@@ -429,9 +614,8 @@ public class HomeActivity extends Activity {
     /** Reveals the details left to right by growing a clip, with a fade; no re-layout per frame. */
     private void animateDetails(float to, long duration) {
         if (wxExpand != null) wxExpand.cancel();
-        float from = wxDetails.getAlpha();
         if (duration == 0) { revealDetails(to); return; }
-        wxExpand = ValueAnimator.ofFloat(from, to);
+        wxExpand = ValueAnimator.ofFloat(wxDetails.getAlpha(), to);
         wxExpand.setDuration(duration);
         wxExpand.setInterpolator(EASE);
         wxExpand.addUpdateListener(va -> revealDetails((float) va.getAnimatedValue()));
@@ -439,13 +623,12 @@ public class HomeActivity extends Activity {
     }
 
     private void revealDetails(float f) {
-        int w = wxDetails.getWidth(), h = wxDetails.getHeight();
-        wxDetails.setClipBounds(new android.graphics.Rect(0, 0, Math.round(w * f), h));
+        wxDetails.setClipBounds(new Rect(0, 0, Math.round(wxDetails.getWidth() * f), wxDetails.getHeight()));
         wxDetails.setAlpha(f);
         wxDetails.setTranslationX((1f - f) * -px(10));
     }
 
-    // ---- status (pill + Control Center) ------------------------------------------------------
+    // ---- status (Wi-Fi pill + Control Center) -------------------------------------------------
 
     ConnectivityManager connectivity() { return (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE); }
 
@@ -458,6 +641,14 @@ public class HomeActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 23) {
             Network n = cm.getActiveNetwork();
             NetworkCapabilities caps = n == null ? null : cm.getNetworkCapabilities(n);
+            if (caps != null && caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                // a local firewall VPN (e.g. NetGuard) is not the real link; describe Wi-Fi or Ethernet
+                for (Network m : cm.getAllNetworks()) {
+                    NetworkCapabilities c = cm.getNetworkCapabilities(m);
+                    if (c != null && !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                            && c.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) { n = m; caps = c; break; }
+                }
+            }
             if (caps != null) {
                 net.validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
                 net.type = caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ? NetworkIcon.ETHERNET : NetworkIcon.WIFI;
@@ -483,23 +674,68 @@ public class HomeActivity extends Activity {
                 if (ssid != null && !ssid.contains("unknown ssid")) net.name = ssid.replace("\"", "");
             }
         }
-        pillNet.set(net.type, net.level, net.validated);
-        pillLabel.setText(net.type == NetworkIcon.OFFLINE ? "Offline"
-                : net.type == NetworkIcon.ETHERNET ? "Ethernet" : (net.validated ? "Wi-Fi" : "No internet"));
+        wifiIcon.set(net.type, net.level, net.validated);
+        wifiLabel.setText(net.type == NetworkIcon.OFFLINE ? "Offline"
+                : net.type == NetworkIcon.ETHERNET ? "Ethernet" : (net.validated ? (net.name != null ? net.name : "Wi-Fi") : "No internet"));
+        // the Wi-Fi pill's glow says how the connection is: teal online, amber no internet, red offline
+        wifiShelf.label = net.type == NetworkIcon.OFFLINE ? "Offline"
+                : !net.validated ? "No internet"
+                : net.type == NetworkIcon.ETHERNET ? "Ethernet" : (net.name != null ? net.name : "Wi-Fi");
+        wifiShelf.glowColor = net.type == NetworkIcon.OFFLINE ? 0xFFD9443F : !net.validated ? 0xFFE39B2D : 0xFF1FA6C4;
+        settingsShelf.label = "Settings";
+        settingsShelf.glowColor = 0xFF7385A8; // calm silver-blue
+        if (shelfApp == wifiShelf && wifiPill.hasFocus()) { shelfApp = null; showShelf(wifiShelf); } // state changed
         if (panel != null) panel.refresh();
     }
 
     // ---- apps ----------------------------------------------------------------------------
 
+    /**
+     * Reloads the app list. One install or update sends several broadcasts, so wait for them to
+     * settle and only keep the newest result: each load renders artwork for every app.
+     */
     void load() {
         dirty = false;
+        handler.removeCallbacks(loadRun);
+        handler.postDelayed(loadRun, shownOnce ? 400 : 0);
+    }
+
+    private void loadNow() {
+        int gen = ++loadGen, w = px(cardW), h = px(cardH), lw = liftW, lh = liftH;
+        float r = px(radius);
         new Thread(() -> {
-            List<AppInfo> list = queryApps();
-            runOnUiThread(() -> { apps = list; buildGrid(); });
+            List<AppInfo> list = queryApps(w, h, lw, lh, r);
+            runOnUiThread(() -> { if (gen == loadGen) adopt(list); });
         }).start();
     }
 
-    private List<AppInfo> queryApps() {
+    /** Swaps in a fresh list; mid-move, keeps the order being edited and follows the moving app. */
+    private void adopt(List<AppInfo> list) {
+        if (moving != null) {
+            AppInfo m = byKey(list, moving.key);
+            if (m == null) {
+                if (jiggle != null) jiggle.stop();
+                moving = null;
+            } else {
+                Map<String, Integer> rank = new HashMap<>();
+                for (int i = 0; i < apps.size(); i++) rank.put(apps.get(i).key, i);
+                Collections.sort(list, (x, y) -> {
+                    Integer rx = rank.get(x.key), ry = rank.get(y.key);
+                    return (rx == null ? Integer.MAX_VALUE : rx) - (ry == null ? Integer.MAX_VALUE : ry);
+                });
+                moving = m;
+            }
+        }
+        apps = list;
+        buildGrid();
+    }
+
+    static AppInfo byKey(List<AppInfo> list, String key) {
+        for (AppInfo a : list) if (a.key.equals(key)) return a;
+        return null;
+    }
+
+    private List<AppInfo> queryApps(int w, int h, int lw, int lh, float rad) {
         PackageManager pm = getPackageManager();
         Map<String, ResolveInfo> found = new LinkedHashMap<>();
         // Prefer each app's TV (leanback) entry; fall back to its phone launcher entry.
@@ -517,19 +753,20 @@ public class HomeActivity extends Activity {
             AppInfo a = new AppInfo();
             a.key = ai.packageName;
             a.label = String.valueOf(r.loadLabel(pm));
-            a.banner = ai.loadBanner(pm);
-            if (a.banner == null) {
-                a.icon = r.loadIcon(pm);
-                a.washColors = Art.washColors(a.icon);
-            }
-            a.tint = Art.accentOf(a.banner != null ? a.banner : Art.iconTile(a.icon, a.washColors, 160, 90, 52, 0));
+            // Rendered once, at the lifted size, from the app's sharpest artwork: crisp when focused too.
+            // The big source drawables are dropped right after; only the tile-sized bitmap is kept.
+            // Two pixel-exact copies: one at the resting size, one at the lifted size the selected tile
+            // grows to. Each is shown 1:1, so no tile is ever resampled (resampling is what blurred them).
+            android.graphics.Bitmap plain = renderArt(pm, r, w, h);
+            a.glowColor = Art.vividColor(plain);
+            a.art = Art.rounded(plain, rad);
+            a.artLift = Art.rounded(renderArt(pm, r, lw, lh), rad * lw / w);
             a.system = (ai.applicationInfo.flags & ApplicationInfo.FLAG_SYSTEM) != 0;
             a.launch = new Intent(Intent.ACTION_MAIN)
                     .setComponent(new ComponentName(ai.packageName, ai.name))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
             list.add(a);
         }
-
         // Saved order first, everything else alphabetically after it.
         List<String> order = savedOrder();
         Map<String, Integer> rank = new HashMap<>();
@@ -541,24 +778,36 @@ public class HomeActivity extends Activity {
             if (ry != null) return 1;
             return x.label.compareToIgnoreCase(y.label);
         });
-
-        AppInfo s = new AppInfo();
-        s.key = SETTINGS_KEY;
-        s.label = "Settings";
-        s.icon = getDrawable(R.drawable.gear);
-        s.washColors = new int[]{0xFF4A5D85, 0xFF26324A};
-        s.tint = 0xFF26324A;
-        s.system = true;
-        s.launch = new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        list.add(s);
         return list;
     }
 
+    /** The banner if the app has one, else its icon on a graphite card; a plain card if both fail. */
+    private static android.graphics.Bitmap renderArt(PackageManager pm, ResolveInfo r, int w, int h) {
+        ActivityInfo ai = r.activityInfo;
+        try {
+            Drawable banner = Art.hiRes(pm, ai, true);
+            if (banner == null) banner = ai.loadBanner(pm);
+            if (banner != null) return Art.sharp(banner, w, h);
+            Drawable icon = Art.hiRes(pm, ai, false);
+            return Art.iconCard(icon != null ? icon : r.loadIcon(pm), w, h);
+        } catch (Exception | OutOfMemoryError e) {
+            try {
+                return Art.iconCard(r.loadIcon(pm), w, h);
+            } catch (Exception | OutOfMemoryError e2) {
+                android.graphics.Bitmap plain = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.RGB_565);
+                plain.eraseColor(0xFF1C1C1E);
+                return plain;
+            }
+        }
+    }
+
     /** Fresh artwork for one view: the banner, or the square icon on its colour wash. */
-    Drawable artFor(AppInfo a) {
-        if (a.banner != null) return Art.copy(a.banner);
-        int size = Math.round(cardH * (a.key.equals(SETTINGS_KEY) ? 0.48f : 0.64f));
-        return Art.iconTile(a.icon, a.washColors, px(cardW), px(cardH), px(size), 0);
+    Drawable artFor(AppInfo a) { return artFor(a.art); }
+
+    Drawable artFor(android.graphics.Bitmap bmp) {
+        BitmapDrawable d = new BitmapDrawable(getResources(), bmp);
+        d.setFilterBitmap(true);
+        return d;
     }
 
     private List<String> savedOrder() {
@@ -568,18 +817,23 @@ public class HomeActivity extends Activity {
 
     private void saveOrder() {
         List<String> keys = new ArrayList<>();
-        for (AppInfo a : apps) if (!a.key.equals(SETTINGS_KEY)) keys.add(a.key);
+        for (AppInfo a : apps) keys.add(a.key);
         prefs.edit().putString("order", TextUtils.join(",", keys)).apply();
     }
 
-    // ---- grid ----------------------------------------------------------------------------
+    // ---- dock + grid -----------------------------------------------------------------------
 
     void buildGrid() {
         View cur = getCurrentFocus();
         if (cur != null && cur.getTag() instanceof String) focusKey = (String) cur.getTag();
-        // Removing the focused tile would hand focus to the pill; park it until we refocus.
-        pill.setFocusable(false);
-        grid.removeAllViews();
+        // Removing the focused tile would hand focus to a pill; park them until we refocus.
+        // (If a pill holds focus, leave it there: the rebuild doesn't touch it.)
+        View onPill = wifiPill.hasFocus() ? wifiPill : settingsPill.hasFocus() ? settingsPill : null;
+        if (onPill == null) {
+            wifiPill.setFocusable(false);
+            settingsPill.setFocusable(false);
+        }
+        rows.removeAllViews();
         rowOf.clear();
 
         boolean entrance = !shownOnce && cfg.motion != Prefs.MOTION_OFF;
@@ -588,138 +842,200 @@ public class HomeActivity extends Activity {
         View toFocus = null;
         for (int i = 0; i < apps.size(); i++) {
             AppInfo a = apps.get(i);
+            int r = i / cols;
             if (i % cols == 0) {
                 row = new LinearLayout(this);
                 row.setClipChildren(false);
                 row.setClipToPadding(false);
-                grid.addView(row, new LinearLayout.LayoutParams(-2, px(rowH)));
+                LinearLayout.LayoutParams lp;
+                if (r == 0) {
+                    // the dock row sits inside the band (drawn behind it by its own view)
+                    row.setPadding(px(BAND_PAD), px(BAND_PAD), px(BAND_PAD), px(BAND_PAD));
+                    lp = new LinearLayout.LayoutParams(px(dockW), px(dockH));
+                    lp.bottomMargin = px(26);
+                } else {
+                    // the rest of the grid only appears once you go down from the dock
+                    row.setPadding(px(BAND_PAD), 0, px(BAND_PAD), 0);
+                    row.setAlpha(focusRow == 0 ? 0f : 1f);
+                    lp = new LinearLayout.LayoutParams(px(dockW), px(rowH));
+                }
+                rows.addView(row, lp);
             }
-            rowOf.put(a.key, i / cols);
-            View cell = tile(a, i == apps.size() - 1 || i % cols == cols - 1);
+            rowOf.put(a.key, r);
+            View cell = tile(a, r == 0, i % cols == 0);
             row.addView(cell);
             View card = cell.findViewWithTag(a.key);
             if (a.key.equals(focusKey) || toFocus == null) toFocus = card;
             if (entrance) {
                 cell.setAlpha(0f);
-                cell.setTranslationY(px(24));
+                cell.setTranslationY(px(22));
                 cell.animate().alpha(1f).translationY(0).setStartDelay(cfg.ms(25) * i)
                         .setDuration(cfg.ms(380)).setInterpolator(EASE).start();
             }
         }
+        // content is taller than the screen once there are several rows; size it exactly so lower
+        // rows are laid out (a wrap_content child of the root is capped at the screen height)
+        int nRows = (apps.size() + cols - 1) / cols;
+        content.getLayoutParams().height = px(dockH + 26 + Math.max(0, nRows - 1) * rowH + 160);
+        content.requestLayout();
+        if (apps.isEmpty()) {
+            showShelf(null);
+            slideTo(0, true);
+        }
         View target = toFocus;
-        grid.post(() -> {
-            if (target != null) target.requestFocus();
-            pill.setFocusable(true);
+        rows.post(() -> {
+            boolean ccOpen = panel.isOpen();
+            if (!ccOpen) {
+                wifiPill.setFocusable(true);
+                settingsPill.setFocusable(true);
+            }
+            if (onPill != null) onPill.requestFocus();
+            else if (target != null && !ccOpen) target.requestFocus();
+            slideTo(focusRow, true); // sizes may have changed with the settings: re-place the dock or grid
             if (moving != null) startWiggle();
         });
     }
 
-    private View tile(AppInfo a, boolean lastInRow) {
+    private View tile(AppInfo a, boolean dock, boolean firstInRow) {
         LinearLayout cell = new LinearLayout(this);
         cell.setOrientation(LinearLayout.VERTICAL);
         cell.setClipChildren(false);
-        cell.setClipToPadding(false); // the focused tile grows past the cell's padding
-        cell.setLayoutParams(new LinearLayout.LayoutParams(px(cardW + GAP), -1));
-        cell.setPadding(px(GAP / 2f), px(12), px(GAP / 2f), 0);
+        cell.setClipToPadding(false);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(px(cardW), -1);
+        if (!firstInRow) clp.leftMargin = px(gap);
+        cell.setLayoutParams(clp);
 
         FrameLayout card = new FrameLayout(this);
         card.setTag(a.key);
         card.setFocusable(true);
         card.setClickable(true);
-        card.setOutlineProvider(new Callbacks.RoundedOutline(px(12)));
-        card.setClipToOutline(true);
-        // Banners fill the tile, so only square-icon tiles (drawn on their own wash) need no backing.
+        card.setClipChildren(false);
+        // The selection lives in each tile: a soft shadow behind the artwork and a bright rim around it,
+        // both hidden until the tile is selected. They grow with the tile and only ever fade.
+        ImageView shade = new ImageView(this);
+        shade.setImageDrawable(new BitmapDrawable(getResources(), focusShadow()));
+        shade.setAlpha(0f);
+        shade.forceHasOverlappingRendering(false); // fades without an offscreen layer
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(-1, -1);
+        int sp = px(SHADOW_PAD);
+        slp.setMargins(-sp, -sp, -sp, -sp);
+        card.addView(shade, slp);
         ImageView art = new ImageView(this);
-        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        art.setScaleType(ImageView.ScaleType.FIT_XY); // both copies are pre-sized: 1:1 at rest and when lifted
         art.setImageDrawable(artFor(a));
-        // Unselected tiles are dimmed by a colour filter on the artwork itself: it's applied in the
-        // same pass that draws the image, so it costs no extra drawing (an overlay layer doubled
-        // the pixels drawn and an outline aliased at the corners when scaled).
-        art.setColorFilter(DIM, PorterDuff.Mode.MULTIPLY);
         card.addView(art, new FrameLayout.LayoutParams(-1, -1));
+        View rim = new View(this);
+        GradientDrawable ring = new GradientDrawable();
+        ring.setCornerRadius(px(radius + 2));
+        ring.setStroke(px(3), 0xFFFFFFFF);
+        rim.setBackground(ring);
+        rim.setAlpha(0f);
+        rim.forceHasOverlappingRendering(false); // fades without an offscreen layer
+        FrameLayout.LayoutParams rlp = new FrameLayout.LayoutParams(-1, -1);
+        rlp.setMargins(-px(2), -px(2), -px(2), -px(2)); // 2 dp outside, 1 dp over the soft edge: no seam
+        card.addView(rim, rlp);
 
         TextView label = new TextView(this);
         label.setText(a.label);
+        label.setTypeface(Fonts.regular(this));
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
         label.setTextSize(13);
         label.setTextColor(Color.WHITE);
-        label.setAlpha(labelAlpha(false));
         label.setGravity(Gravity.CENTER_HORIZONTAL);
         label.setPadding(0, px(14), 0, 0);
-        if (cfg.labels == Prefs.LABELS_NEVER) label.setVisibility(View.GONE);
+        // the dock names the focused app in the shelf title instead of under the tile
+        boolean showLabels = !dock && cfg.labels != Prefs.LABELS_NEVER;
+        label.setVisibility(showLabels ? View.VISIBLE : View.GONE);
+        label.setAlpha(cfg.labels == Prefs.LABELS_ALWAYS ? 0.6f : 0f);
 
-        card.setOnFocusChangeListener((v, has) -> onCardFocus(v, art, label, a, has));
+        card.setOnFocusChangeListener((v, has) -> onCardFocus(v, art, shade, rim, label, a, has));
         card.setOnClickListener(v -> onCardClick(v, a));
-        card.setOnLongClickListener(v -> { if (moving == null) options(a); return true; });
-        card.setOnKeyListener((v, code, e) -> onCardKey(v, a, code, e, lastInRow));
+        card.setOnLongClickListener(v -> { if (moving == null) startMove(a); return true; }); // hold OK: jiggle to move
+        card.setOnKeyListener((v, code, e) -> onCardKey(a, code, e));
 
         cell.addView(card, new LinearLayout.LayoutParams(px(cardW), px(cardH)));
         cell.addView(label, new LinearLayout.LayoutParams(px(cardW), -2));
         return cell;
     }
 
-    private float labelAlpha(boolean focused) {
-        if (focused) return 1f;
-        return cfg.labels == Prefs.LABELS_FOCUSED ? 0f : 0.55f;
-    }
-
-    static final int DIM = 0xFFA6A6A6; // multiply: about 65% brightness for unselected tiles
-
-    /** Fades one tile's artwork between dimmed and full brightness. Only two tiles change per move. */
-    private void brighten(ImageView art, boolean on) {
-        Object running = art.getTag();
-        if (running instanceof ValueAnimator) ((ValueAnimator) running).cancel();
-        if (cfg.motion == Prefs.MOTION_OFF) {
-            art.setColorFilter(on ? Color.WHITE : DIM, PorterDuff.Mode.MULTIPLY);
-            return;
-        }
-        int from = on ? DIM : Color.WHITE, to = on ? Color.WHITE : DIM;
-        ValueAnimator va = ValueAnimator.ofObject(new ArgbEvaluator(), from, to);
-        va.setDuration(cfg.ms(on ? 160 : 220));
-        va.addUpdateListener(x -> art.setColorFilter((int) x.getAnimatedValue(), PorterDuff.Mode.MULTIPLY));
-        art.setTag(va);
-        va.start();
-    }
-
-    private float focusScale() { return cfg.motion == Prefs.MOTION_FULL ? 1.12f : 1.08f; }
-
-    private void onCardFocus(View card, ImageView art, TextView label, AppInfo a, boolean has) {
-        float s = has ? focusScale() : 1f;
-        card.animate().scaleX(s).scaleY(s)
-                .setDuration(cfg.ms(has ? 240 : 180))
-                .setInterpolator(has && cfg.motion == Prefs.MOTION_FULL ? SETTLE : EASE).start();
-        label.animate().alpha(labelAlpha(has)).translationY(has ? px(6) : 0).setDuration(cfg.ms(200)).setInterpolator(EASE).start();
-        brighten(art, has);
+    private void onCardFocus(View card, ImageView art, View shade, View rim, TextView label, AppInfo a, boolean has) {
+        float sx = has ? liftX : 1f, sy = has ? liftY : 1f;
+        // the lifted copy, squeezed into the resting tile and scaled back up by the lift, lands 1:1 on screen pixels
+        art.setImageDrawable(artFor(has && a.artLift != null ? a.artLift : a.art));
+        long d = cfg.ms(has ? 200 : 140);
+        card.animate().scaleX(sx).scaleY(sy).setDuration(d).setInterpolator(EASE).start();
+        // the old tile lets go and the new one lights up in place: nothing travels between them
+        rim.animate().alpha(has ? 1f : 0f).setDuration(d).setInterpolator(EASE).start();
+        shade.animate().alpha(has ? 1f : 0f).setDuration(d).setInterpolator(EASE).start();
+        float off = cfg.labels == Prefs.LABELS_ALWAYS ? 0.6f : 0f;
+        label.animate().alpha(has ? 1f : off).translationY(has ? px(6) : 0).setDuration(cfg.ms(200)).setInterpolator(EASE).start();
         if (!has) return;
         focusKey = a.key;
-        if (cfg.tint) setTint(a.tint);
         Integer r = rowOf.get(a.key);
-        scrollToRow(r == null ? 0 : r);
+        int row = r == null ? 0 : r;
+        slideTo(row, false);
+        showShelf(row == 0 ? a : null);
     }
 
-    private boolean onCardKey(View card, AppInfo a, int code, KeyEvent e, boolean lastInRow) {
+    /**
+     * Arrow keys move strictly through the grid: LEFT/RIGHT stay in the row and stop at its ends,
+     * DOWN/UP keep the column, and only UP from the dock reaches the pills. (Android's own focus
+     * search picks the "nearest" view, which could jump from a tile to a pill.)
+     */
+    private boolean onCardKey(AppInfo a, int code, KeyEvent e) {
         if (code == KeyEvent.KEYCODE_MENU) {
-            if (e.getAction() == KeyEvent.ACTION_UP && moving == null) options(a);
+            // MENU: hide, app info, uninstall (also from jiggle mode, which it ends first)
+            if (e.getAction() == KeyEvent.ACTION_UP) {
+                AppInfo target = moving != null ? moving : a;
+                if (moving != null) endMove();
+                options(target);
+            }
             return true;
         }
         if (e.getAction() != KeyEvent.ACTION_DOWN) return false;
-        if (moving != null) return moveKey(code);
-        // RIGHT at the end of a row opens the Control Center, but only on a fresh press, so holding
-        // RIGHT to race along a row stops at the last tile instead of flinging the panel open.
-        if (code == KeyEvent.KEYCODE_DPAD_RIGHT && lastInRow && cfg.edgeCc) {
-            if (e.getRepeatCount() == 0) panel.open(card);
-            return true;
+        if (moving != null) {
+            // the OK still held from the long press repeats; only a fresh press ends jiggle mode
+            boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER;
+            if (ok && e.getRepeatCount() > 0) return true;
+            return moveKey(code);
+        }
+        int i = apps.indexOf(a), n = apps.size(), col = i % cols, row = i / cols, lastRow = (n - 1) / cols;
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+                if (col > 0) focusApp(i - 1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (col < cols - 1 && i + 1 < n) focusApp(i + 1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                if (row == 0) wifiPill.requestFocus();
+                else focusApp(Math.min((row - 1) * cols + col, n - 1));
+                return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (row < lastRow) focusApp(Math.min((row + 1) * cols + col, n - 1));
+                return true;
         }
         return false;
+    }
+
+    private void focusApp(int index) {
+        View card = rows.findViewWithTag(apps.get(index).key);
+        if (card != null) card.requestFocus();
+    }
+
+    /** Focuses the last selected tile (or the first), e.g. coming down from the pills. */
+    private void focusLastCard() {
+        View card = focusKey == null ? null : rows.findViewWithTag(focusKey);
+        if (card == null && !apps.isEmpty()) card = rows.findViewWithTag(apps.get(0).key);
+        if (card != null) card.requestFocus();
     }
 
     private void onCardClick(View card, AppInfo a) {
         if (moving != null) { endMove(); return; }
         if (cfg.motion == Prefs.MOTION_FULL) {
-            // A quick press-in before the app opens.
-            card.animate().scaleX(1.05f).scaleY(1.05f).setDuration(70).setInterpolator(EASE)
-                    .withEndAction(() -> card.animate().scaleX(focusScale()).scaleY(focusScale()).setDuration(180).setInterpolator(SETTLE).start())
+            card.animate().scaleX(1.0f).scaleY(1.0f).setDuration(70).setInterpolator(EASE)
+                    .withEndAction(() -> card.animate().scaleX(liftX).scaleY(liftY).setDuration(180).setInterpolator(EASE).start())
                     .start();
         }
         try {
@@ -729,45 +1045,98 @@ public class HomeActivity extends Activity {
         }
     }
 
-    private void setTint(int to) {
-        if (tintAnim != null) tintAnim.cancel();
-        if (cfg.motion == Prefs.MOTION_OFF) {
-            tint = to;
-            backdrop.setColors(new int[]{tint, BASE, BASE});
+    // ---- motion: slide, shelf --------------------------------------------------------
+
+    /**
+     * Two modes. Dock: only the first row shows, low on the screen in its band, under the app's name.
+     * Grid (any lower row focused): the band fades away, the whole grid fades in and slides up, and
+     * it scrolls further only when the focused row would leave the screen.
+     */
+    private void slideTo(int row, boolean force) {
+        if (row == focusRow && !force) return;
+        boolean modeChange = (row == 0) != (focusRow == 0) || force;
+        focusRow = row;
+        long d = cfg.ms(420);
+        float y;
+        if (row == 0) {
+            y = px(dockRest);
+        } else {
+            float screenH = getResources().getDisplayMetrics().heightPixels;
+            float rowBottom = px(dockH + 26) + row * px(rowH); // bottom of the focused row's slot
+            y = Math.min(px(DOCK_UP), screenH - px(24) - rowBottom);
+        }
+        if (d == 0) content.setTranslationY(y);
+        else content.animate().translationY(y).setDuration(d).setInterpolator(EASE).start();
+        if (!modeChange) return;
+        float gridAlpha = row == 0 ? 0f : 1f;
+        topFade.animate().alpha(gridAlpha).setDuration(cfg.ms(240)).start();
+        band.animate().alpha(1f - gridAlpha).setDuration(cfg.ms(row == 0 ? 360 : 240)).start();
+        for (int r = 1; r < rows.getChildCount(); r++) {
+            View v = rows.getChildAt(r);
+            v.animate().alpha(gridAlpha).setStartDelay(row == 0 ? 0 : cfg.ms(60) * r)
+                    .setDuration(cfg.ms(row == 0 ? 200 : 360)).setInterpolator(EASE).start();
+        }
+        if (row != 0) showShelf(null);
+    }
+
+    private void resizeDock() {
+        shadowBmp = null; // tiles changed size: the next grid gets a fresh shadow
+        FrameLayout.LayoutParams blp = (FrameLayout.LayoutParams) band.getLayoutParams();
+        blp.height = px(dockH);
+        blp.width = px(dockW);
+        FrameLayout.LayoutParams tlp = (FrameLayout.LayoutParams) shelfTitle.getLayoutParams();
+        tlp.leftMargin = px(dockLeft() + 4);
+        tlp.topMargin = px(dockRest - 98);
+        shelfTitle.requestLayout();
+        band.setLayoutParams(blp);
+        ((GradientDrawable) ((android.graphics.drawable.LayerDrawable) band.getBackground()).getDrawable(1)).setCornerRadius(px(radius + BAND_PAD));
+        bandTint.setCornerRadius(px(radius + BAND_PAD));
+    }
+
+    /** Names the focused dock app above the dock over its ambient glow; null hides both. */
+    private void showShelf(AppInfo a) {
+        long d = cfg.ms(380);
+        if (a == null) {
+            shelfApp = null;
+            shelfTitle.animate().alpha(0f).setDuration(cfg.ms(200)).start();
+            glowBox.animate().alpha(0f).setDuration(d).start();
             return;
         }
-        tintAnim = ValueAnimator.ofObject(new ArgbEvaluator(), tint, to);
-        tintAnim.setDuration(cfg.ms(420));
-        tintAnim.setInterpolator(EASE);
-        tintAnim.addUpdateListener(va -> {
-            tint = (int) va.getAnimatedValue();
-            backdrop.setColors(new int[]{tint, BASE, BASE});
-        });
-        tintAnim.start();
-    }
-
-    // The rows that fit under the header never scroll; past that, glide so the focused row sits last.
-    private void scrollToRow(int row) {
-        int target = Math.max(0, (row - (rowsVisible - 1)) * px(rowH));
-        if (scroller.getScrollY() == target && (scrollAnim == null || !scrollAnim.isRunning())) return;
-        animateScroll(target);
-    }
-
-    private void animateScroll(int target) {
-        if (scrollAnim != null) scrollAnim.cancel();
-        if (cfg.motion == Prefs.MOTION_OFF) { scroller.scrollTo(0, target); return; }
-        scrollAnim = ObjectAnimator.ofInt(scroller, "scrollY", scroller.getScrollY(), target);
-        scrollAnim.setDuration(cfg.ms(360));
-        scrollAnim.setInterpolator(EASE);
-        scrollAnim.start();
+        boolean wasHidden = shelfApp == null;
+        if (a == shelfApp) return;
+        shelfApp = a;
+        if (wasHidden) {
+            shelfTitle.setText(a.label);
+            shelfTitle.setTranslationY(px(8));
+            shelfTitle.animate().alpha(1f).translationY(0).setDuration(d).setInterpolator(EASE).start();
+        } else {
+            shelfTitle.animate().alpha(0f).setDuration(cfg.ms(110)).withEndAction(() -> {
+                if (shelfApp == null) return;
+                shelfTitle.setText(shelfApp.label);
+                shelfTitle.animate().alpha(1f).setDuration(cfg.ms(260)).setInterpolator(EASE).start();
+            }).start();
+        }
+        if (!cfg.tint) { glowBox.animate().alpha(0f).setDuration(d).start(); return; }
+        // the light fades in once, then only its colour glides from app to app
+        if (glowFade != null) glowFade.cancel();
+        if (glowBox.getAlpha() == 0f || d == 0) tintGlow(a.glowColor);
+        else {
+            glowFade = ValueAnimator.ofObject(new ArgbEvaluator(), glowColor, a.glowColor);
+            glowFade.setDuration(cfg.ms(360));
+            glowFade.addUpdateListener(va -> tintGlow((int) va.getAnimatedValue()));
+            glowFade.start();
+        }
+        glowBox.animate().alpha(1f).setDuration(cfg.ms(600)).start();
     }
 
     // ---- Control Center hooks --------------------------------------------------------------
 
     /** While the Control Center is open, nothing behind it can take focus. */
     void setBackgroundFocusable(boolean on) {
-        scroller.setDescendantFocusability(on ? ViewGroup.FOCUS_AFTER_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
-        pill.setFocusable(on);
+        content.setDescendantFocusability(on ? ViewGroup.FOCUS_AFTER_DESCENDANTS : ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        // Settings first: disabling the focused Wi-Fi pill first would pass focus to (and light) Settings.
+        settingsPill.setFocusable(on);
+        wifiPill.setFocusable(on);
     }
 
     void startSettings(String action) {
@@ -779,10 +1148,6 @@ public class HomeActivity extends Activity {
     // ---- options and move mode ---------------------------------------------------------------
 
     private void options(AppInfo a) {
-        if (a.key.equals(SETTINGS_KEY)) {
-            openSettings();
-            return;
-        }
         List<String> items = new ArrayList<>(Arrays.asList("Move", "Hide", "App info"));
         if (!a.system) items.add("Uninstall");
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
@@ -808,26 +1173,30 @@ public class HomeActivity extends Activity {
                 }).show();
     }
 
-    private void startMove(AppInfo a) {
+    private void startMove(AppInfo picked) {
+        AppInfo a = byKey(apps, picked.key); // the list may have reloaded while the dialog was open
+        if (a == null) return;
         moving = a;
         focusKey = a.key;
         startWiggle();
-        Toast.makeText(this, "Use the arrows to move " + a.label + ". Press OK when done.", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Move " + a.label + " with the arrows · OK when done · MENU for more", Toast.LENGTH_LONG).show();
     }
 
+    /** Every tile jiggles; the one being moved jiggles most. Restarted after each rebuild of the grid. */
     private void startWiggle() {
-        if (wiggle != null) wiggle.cancel();
-        View card = grid.findViewWithTag(moving.key);
-        if (card == null || cfg.motion == Prefs.MOTION_OFF) return;
-        wiggle = ObjectAnimator.ofFloat(card, "rotation", -1.6f, 1.6f);
-        wiggle.setDuration(120);
-        wiggle.setRepeatMode(ValueAnimator.REVERSE);
-        wiggle.setRepeatCount(ValueAnimator.INFINITE);
-        wiggle.start();
+        if (moving == null || cfg.motion == Prefs.MOTION_OFF) return;
+        if (jiggle == null) jiggle = new Jiggle(dp);
+        List<View> cards = new ArrayList<>();
+        for (AppInfo a : apps) {
+            View c = rows.findViewWithTag(a.key);
+            if (c != null) cards.add(c);
+        }
+        jiggle.start(cards, rows.findViewWithTag(moving.key));
     }
 
     private boolean moveKey(int code) {
-        int i = apps.indexOf(moving), last = apps.size() - 2; // Settings always stays last
+        int i = apps.indexOf(moving), last = apps.size() - 1;
+        if (i < 0) { endMove(); return true; }
         int j = i;
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_LEFT: j = i - 1; break;
@@ -840,7 +1209,7 @@ public class HomeActivity extends Activity {
                 endMove();
                 return true;
             default:
-                return true;
+                return false; // volume and other keys still work while moving
         }
         j = Math.max(0, Math.min(last, j));
         if (j != i) {
@@ -852,12 +1221,31 @@ public class HomeActivity extends Activity {
     }
 
     private void endMove() {
-        if (wiggle != null) wiggle.cancel();
-        wiggle = null;
-        View card = grid.findViewWithTag(moving.key);
-        if (card != null) card.animate().rotation(0).setDuration(120).start();
+        if (jiggle != null) jiggle.stop();
         moving = null;
         saveOrder();
+    }
+
+    static final int SHADOW_PAD = 24; // dp of room around a tile for its blurred shadow
+
+    /** The selected tile's drop shadow: blurred once per tile size, shared by every tile. */
+    android.graphics.Bitmap focusShadow() {
+        if (shadowBmp != null) return shadowBmp;
+        int pad = px(SHADOW_PAD), w = px(cardW) + 2 * pad, h = px(cardH) + 2 * pad;
+        shadowBmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        p.setColor(0xCC000000);
+        p.setMaskFilter(new android.graphics.BlurMaskFilter(px(12), android.graphics.BlurMaskFilter.Blur.NORMAL));
+        float drop = px(8);
+        new android.graphics.Canvas(shadowBmp).drawRoundRect(pad - px(2), pad + drop, w - pad + px(2), h - pad + drop,
+                px(radius), px(radius), p);
+        return shadowBmp;
+    }
+
+    /** Left edge of the centred dock band, in dp. */
+    float dockLeft() {
+        float screenW = getResources().getDisplayMetrics().widthPixels / dp;
+        return Math.max(SIDE, (screenW - dockW) / 2f);
     }
 
     int px(float v) { return Math.round(v * dp); }
